@@ -1,0 +1,56 @@
+{
+  "name": "todojo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.19.1",
+  "engines": {
+    "node": ">=26.7.0"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/verify-stack.mjs --typecheck-only",
+    "lint": "biome ci .",
+    "dead-code": "knip",
+    "quality": "npm run typecheck && npm run lint && npm run dead-code",
+    "test": "tsx --test tests/stack-probe.ts tests/*.test.ts && playwright test --pass-with-no-tests",
+    "test:stack": "tsx --test tests/stack-probe.ts",
+    "test:core": "node scripts/run-tests.mjs core",
+    "test:server": "node scripts/run-tests.mjs server",
+    "test:ui": "playwright test",
+    "verify:stack": "node scripts/verify-stack.mjs",
+    "verify:vm-preflight": "node scripts/verify-vm-preflight.mjs",
+    "verify:clean-tree": "node scripts/verify-clean-tree.mjs",
+    "verify:launcher": "node scripts/verify-launcher.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:local": "node scripts/verify-local.mjs",
+    "prepush": "npm run verify:vm-preflight && npm run verify:stack && npm run test && npm run quality && npm run verify:clean-tree",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/core": "2.1.0",
+    "@modelcontextprotocol/ext-apps": "2.0.1",
+    "@modelcontextprotocol/server": "2.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "husky": "9.1.7",
+    "knip": "6.38.0",
+    "playwright": "1.63.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

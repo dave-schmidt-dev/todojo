@@ -1,0 +1,6 @@
+{
+  "timeout_ms": 1500000,
+  "after_create": {
+    "argv": ["bash", "scripts/vm-setup.sh"]
+  }
+}
