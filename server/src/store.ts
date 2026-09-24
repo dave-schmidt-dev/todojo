@@ -9,6 +9,8 @@ import type { StatusCallback } from "./progress.js";
 /** Persistence boundary so a hosted backend can replace SQLite without tool changes. */
 export interface TaskPlanRepository {
   createPlan(input: CreatePlanInput, status?: StatusCallback): TaskPlan;
+  /** Lists persisted plans so callers can recover an explicit plan ID. */
+  listPlans(status?: StatusCallback): TaskPlan[];
   getPlan(planId: string, status?: StatusCallback): TaskPlan;
   addTask(
     planId: string,

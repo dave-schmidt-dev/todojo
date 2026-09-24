@@ -116,6 +116,18 @@ export class SQLiteTaskPlanRepository implements TaskPlanRepository {
     return withProgress("get_task_plan", status, () => this.snapshot(planId));
   }
 
+  listPlans(status?: StatusCallback): TaskPlan[] {
+    return withProgress("list_task_plans", status, () =>
+      (
+        this.database
+          .prepare(
+            "SELECT id FROM plans ORDER BY updated_at DESC, created_at DESC",
+          )
+          .all() as { id: string }[]
+      ).map((plan) => this.snapshot(plan.id)),
+    );
+  }
+
   addTask(
     planId: string,
     task: NewTask,

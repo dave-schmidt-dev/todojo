@@ -22,7 +22,9 @@ Live, numbered to-do tracking for substantial ChatGPT and Codex work.
 | `docs/SPEC.md` | ToDoJo v0.1 specification, adapted from the user-provided build and test packet. |
 | `LICENSE` | MIT. |
 | `assets/source/todojo-light-dark.png` | Owner-provided light and dark icon source for the upload package. |
-| `server/src/` | Typed plan model, SQLite repository, timers, and progress callbacks. |
+| `server/src/` | Typed plan model, SQLite repository, timers, MCP tools, and progress callbacks. |
+| `bin/todojo-mcp` | Executable stdio MCP launcher for a bundled install. |
+| `scripts/verify-launcher.mjs` | Installed-entry test outside the source checkout. |
 
 ## Planning artifacts
 
@@ -43,9 +45,11 @@ npm ci
 npm run verify:stack
 npm run quality
 npm run test:core
+npm run test:server
+npm run verify:launcher
 ```
 
-The SQLite repository opens in WAL mode and stores all task transitions atomically. Installed and tunnel launches must supply an absolute `TODOJO_DB_PATH`; explicit `TODOJO_DEV_MODE=1` uses this repository's ignored `.data/todojo.sqlite` during development. Snapshots include a server timestamp, total active work time, and the current task ID even when that task is blocked.
+The SQLite repository opens in WAL mode and stores all task transitions atomically. Installed and tunnel launches must supply an absolute `TODOJO_DB_PATH`; explicit `TODOJO_DEV_MODE=1` uses this repository's ignored `.data/todojo.sqlite` during development. Snapshots include a server timestamp, total active work time, and the current task ID even when that task is blocked. The MCP server runs over stdio; `bin/todojo-mcp` starts the bundled server and forwards its arguments. It does not open an HTTP listener. Installed runs require an absolute `TODOJO_DB_PATH`. Logs default beside the configured database (in project `.logs/` when the database is in project `.data/`); `TODOJO_LOG_PATH` can explicitly set another absolute path. Status events go to the MCP logging channel and stderr, while the rotating file records warnings and errors by default or debug details with `--debug`.
 
 The Phase 0 gate also runs `npm run verify:vm-preflight` against a disposable macOS guest. Git hooks keep precommit checks fast; the prepush hook runs the broader gate. Build output, runtime data, logs, the test profile, and operational `HISTORY.md`/`TASKS.md` stay local and ignored.
 
