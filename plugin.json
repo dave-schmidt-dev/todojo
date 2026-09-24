@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "todojo",
+  "version": "0.1.0",
+  "description": "Live numbered task tracking for substantial ChatGPT and Codex work.",
+  "repository": "https://github.com/dave-schmidt-dev/todojo",
+  "license": "MIT",
+  "keywords": ["tasks", "productivity", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "ToDoJo",
+        "shortDescription": "Live numbered task tracking for substantial work.",
+        "longDescription": "Keep a persistent, explicit task plan synchronized with substantial multi-step work.",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"]
+      }
+    }
+  }
+}

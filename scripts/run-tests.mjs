@@ -22,6 +22,9 @@ const suites = {
     "runtime-smoke",
     "instructions",
     "bridge-contract",
+    "package",
+    "model-instructions",
+    "installed-launcher",
   ],
 };
 

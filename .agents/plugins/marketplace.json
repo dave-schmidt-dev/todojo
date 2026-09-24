@@ -1,0 +1,20 @@
+{
+  "name": "todojo-local",
+  "interface": {
+    "displayName": "ToDoJo Local"
+  },
+  "plugins": [
+    {
+      "name": "todojo",
+      "source": {
+        "source": "local",
+        "path": "./dist/todojo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
