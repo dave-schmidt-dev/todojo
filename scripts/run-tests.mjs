@@ -21,6 +21,7 @@ const suites = {
     "progress-visibility",
     "runtime-smoke",
     "instructions",
+    "bridge-contract",
   ],
 };
 
