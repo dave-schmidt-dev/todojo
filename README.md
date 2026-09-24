@@ -22,6 +22,7 @@ Live, numbered to-do tracking for substantial ChatGPT and Codex work.
 | `docs/SPEC.md` | ToDoJo v0.1 specification, adapted from the user-provided build and test packet. |
 | `LICENSE` | MIT. |
 | `assets/source/todojo-light-dark.png` | Owner-provided light and dark icon source for the upload package. |
+| `server/src/` | Typed plan model, SQLite repository, timers, and progress callbacks. |
 
 ## Planning artifacts
 
@@ -41,7 +42,10 @@ Use Node 26.7 or newer and npm 11 or newer with the locked dependencies in `pack
 npm ci
 npm run verify:stack
 npm run quality
+npm run test:core
 ```
+
+The SQLite repository opens in WAL mode and stores all task transitions atomically. Installed and tunnel launches must supply an absolute `TODOJO_DB_PATH`; explicit `TODOJO_DEV_MODE=1` uses this repository's ignored `.data/todojo.sqlite` during development. Snapshots include a server timestamp, total active work time, and the current task ID even when that task is blocked.
 
 The Phase 0 gate also runs `npm run verify:vm-preflight` against a disposable macOS guest. Git hooks keep precommit checks fast; the prepush hook runs the broader gate. Build output, runtime data, logs, the test profile, and operational `HISTORY.md`/`TASKS.md` stay local and ignored.
 
