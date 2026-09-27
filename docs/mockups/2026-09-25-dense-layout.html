@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ToDoJo dense layout mockup</title>
+  <style>
+    :root{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif}
+    *{box-sizing:border-box}body{margin:0;background:#151515;color:#f5f1e8}
+    main{max-width:760px;padding:10px}header{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px}
+    strong{letter-spacing:.08em}header .title{min-width:0;flex:1;color:#c9c6bf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .work{white-space:nowrap;color:#c9c6bf}button{font:inherit;color:inherit;cursor:pointer}
+    .mode,.count{border:1px solid #45433f;border-radius:5px;padding:5px 7px;background:#242321;font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:6px}
+    .card{min-width:0;min-height:82px;display:flex;flex-direction:column;justify-content:center;gap:7px;overflow:hidden;border:1px solid #3a3936;border-left:3px solid #8d8b86;border-radius:7px;padding:8px 10px;text-align:left;background:#20201e}
+    .card.active{border-left-color:#5799d5}.card.next{border-left-color:#c99a45}
+    .meta{display:flex;gap:5px;color:#c9c6bf;font-size:11px;font-weight:700;letter-spacing:.07em}.time{margin-left:auto;font-variant-numeric:tabular-nums}
+    .task{font-size:16px;font-weight:650;line-height:1.2;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+    .compact{display:grid;gap:5px}.row{display:grid;grid-template-columns:66px repeat(2,minmax(0,1fr));gap:5px}
+    .compact .card{min-height:56px;padding:6px 8px;gap:3px}.compact .task{font-size:13px}.compact .meta{font-size:10px}
+    .anchor{border:1px solid #45433f;border-radius:5px;padding:6px;background:#242321;text-align:left;font-size:11px;color:#d8d5ce}
+    .anchor span{display:block;margin-top:3px;font-size:15px}aside{margin-top:7px;border:1px solid #55524d;border-radius:7px;padding:10px;background:#1c1c1a;font-size:13px}
+    @media(max-width:420px){main{padding:7px}header{gap:4px;font-size:11px}.grid,.compact,.row{gap:4px}.row{grid-template-columns:52px repeat(2,minmax(0,1fr))}.card{padding:7px}.compact .card{padding:5px}.compact .task{font-size:12px}}
+  </style>
+</head>
+<body><main id="app"></main>
+<script>
+const plan={title:'Due Good iCal feed integration',work:'0:51',tasks:[
+ {id:'last',role:'LAST',title:'No task',time:'',status:'empty'},
+ {id:'current',role:'CURRENT · T1',title:'Reconcile iCal candidate and authority',time:'0:51',status:'active'},
+ {id:'next1',role:'NEXT · T2',title:'Complete guarded feed integration',time:'0:00',status:'next'},
+ {id:'next2',role:'NEXT · T3',title:'Verify candidate and record boundaries',time:'0:00',status:'next'}]};
+let mode='full',detail='';
+function card(task){return `<button class="card ${task.status}" data-detail="${task.id}"><span class="meta">${task.role}<span class="time">${task.time}</span></span><span class="task">${task.title}</span></button>`}
+function render(){const compact=mode==='compact';document.getElementById('app').innerHTML=`<header><strong>LIVE TASKS</strong><span class="title">${plan.title}</span><span class="work">WORK ${plan.work}</span>${compact?'':`<button class="count" data-detail="done">DONE 0</button><button class="count" data-detail="later">LATER 3</button>`}<button class="mode" id="mode">${compact?'Full':'Compact'}</button></header>${compact?`<div class="compact"><div class="row"><button class="anchor" data-detail="done">DONE<span>0</span></button>${card(plan.tasks[0])}${card(plan.tasks[1])}</div><div class="row"><button class="anchor" data-detail="later">NEXT<span>3</span></button>${card(plan.tasks[2])}${card(plan.tasks[3])}</div></div>`:`<div class="grid">${plan.tasks.map(card).join('')}</div>`}${detail?`<aside>${detail==='done'?'No completed tasks':detail==='later'?'3 queued tasks':plan.tasks.find(task=>task.id===detail)?.title}</aside>`:''}`;document.getElementById('mode').onclick=()=>{mode=compact?'full':'compact';render()};document.querySelectorAll('[data-detail]').forEach(button=>{button.onclick=()=>{detail=detail===button.dataset.detail?'':button.dataset.detail;render()}})}
+render();
+</script></body></html>

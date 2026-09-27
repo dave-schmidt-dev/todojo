@@ -472,53 +472,25 @@ Business state always comes from MCP.
 
 # 13. HEADER
 
-Keep the header dense.
-
-Avoid the large blank area seen in earlier mockups.
-
-Suggested Full header:
-
-LIVE TASKS     WORK 16:28     5 DONE     +5 LATER     [Compact]
-
-WORK is authoritative active-work time.
-
-DONE opens completed-history drawer.
-
-LATER opens tasks beyond the two visible NEXT cards.
-
-Compact view may omit redundant DONE/LATER header controls because the row
-anchors already expose them.
-
-Optional plan title may appear only when plan.title exists.
-
-Never invent a plan title.
+Keep the header dense: LIVE TASKS, the authoritative plan title when present,
+WORK time, and the mode switch. Do not invent a plan title. Queue and completed
+counts sit in the Full footer or the Compact count control.
 
 
 # 14. FULL VIEW
 
-Full view is a true 2x2 grid.
+Full uses the available width for a three-column row: the focus task followed
+by up to two queued tasks. The focus column is wider than either queued column.
+The focus is the active or blocked task, or the latest completed task when no
+work is current. When no queued tasks remain, show up to two recent completed
+tasks without repeating the focus. Sparse plans do not render empty task tiles.
 
-ALL FOUR TASK CARDS MUST HAVE EXACTLY THE SAME WIDTH AND HEIGHT.
+Show the task title, status, timer, description when one exists, and blocked
+reason when one exists. Do not reserve space for missing descriptions. The
+footer gives exact queued and completed counts; each count opens its drawer.
 
-Layout:
-
-┌────────────────────────────┬────────────────────────────┐
-│ LAST · T5            4:12 │ CURRENT · T6         2:14 │
-│ ✓ Trace episode state     │ ● Consolidate model       │
-├────────────────────────────┼────────────────────────────┤
-│ NEXT · T7                 │ NEXT · T8                 │
-│ ○ Fix stale counters      │ ○ Run regression tests    │
-└────────────────────────────┴────────────────────────────┘
-
-Row 1:
-- last completed
-- active/current
-
-Row 2:
-- next queued
-- following queued
-
-No uneven card sizing.
+At narrow widths the focus spans the row above two task columns. No layout
+may cause page-level horizontal scrolling.
 
 
 # 15. TITLE SIZING
@@ -568,60 +540,22 @@ Respect prefers-reduced-motion.
 
 # 17. COMPACT VIEW
 
-Compact is NOT the Full view with smaller fonts.
-
-Compact is a different layout.
-
-Exactly two rows:
-
-ROW 1:
-[DONE count] [LAST task] [CURRENT task]
-
-ROW 2:
-[NEXT count] [NEXT task] [NEXT task]
-
-Example:
-
-┌──────────┬───────────────────┬──────────────────────┐
-│ DONE   5 │ T5 · LAST    4:12 │ T6 · NOW       2:14 │
-│          │ ✓ Trace state     │ ● Consolidate model │
-├──────────┼───────────────────┼──────────────────────┤
-│ NEXT   7 │ T7 · NEXT         │ T8 · NEXT            │
-│          │ ○ Fix counters    │ ○ Run tests          │
-└──────────┴───────────────────┴──────────────────────┘
-
-The DONE and NEXT anchors:
-
-- identical width
-- identical height
-- neutral styling
-- not green/amber
-- fixed geometry regardless of 1, 2, or 3 digit counts
-
-Task cells:
-- identical width
-- identical height
-- same semantic colors as Full view
-
-No horizontal scrolling.
+Compact is one status row with the same focus task as Full: status, T number,
+title, and timer. The title may truncate visually; its full text is in the
+button label and task detail drawer. A single count button opens the queued
+tasks when any remain, or history when the queue is empty. The mode switch,
+plan title, and WORK timer remain in the header. No queued or recent task cards
+appear in the Compact row.
 
 
-# 18. DONE / NEXT COUNTS
+# 18. COUNTS AND DRAWERS
 
-DONE = number of completed tasks.
-
-NEXT = number of currently queued tasks.
-
-Skipped tasks do not count as DONE.
-Blocked current task does not count as NEXT.
-
-Click DONE:
-show completed history with durations.
-
-Click NEXT:
-show complete upcoming queue.
-
-Full view can use "+N LATER" for tasks beyond the two visible NEXT cards.
+Queued counts include currently queued tasks only. Completed counts include
+completed tasks only. Skipped tasks remain in history but are not counted as
+completed; a blocked current task is not queued. Full exposes both queue and
+history drawers. Compact exposes the queue while one exists and history when
+there are no queued tasks. Drawer controls are native buttons and toggle open
+or closed.
 
 
 # 19. CLICK BEHAVIOR
@@ -705,7 +639,7 @@ Skipped tasks:
 - timer frozen
 - T# retained forever
 
-They should normally disappear from the 2x2 active window and remain available
+They should normally disappear from the Full active window and remain available
 through plan/history detail.
 
 Do not treat skipped as failure.
@@ -786,7 +720,6 @@ todojo/
 │       ├── component.tsx
 │       ├── bridge.ts
 │       ├── task-grid.tsx
-│       ├── compact-grid.tsx
 │       └── styles.css
 ├── tests/
 │   ├── state-transitions.test.ts
@@ -853,11 +786,10 @@ TIMERS
 - widget remount preserves timers
 
 UI
-- equal-size Full cards
-- true 2x2 layout
-- Compact is a separate layout
+- three-column Full row with a wider focus task
+- Compact is a single current-status row
 - no horizontal scroll at narrow widths
-- DONE and NEXT anchors identical geometry
+- accurate queue and history controls
 - bounded title auto-fit
 - active dot breathes
 - reduced-motion disables animation
@@ -865,8 +797,8 @@ UI
 - click same task closes drawer
 - click another replaces drawer
 - × closes drawer
-- DONE opens history
-- NEXT/LATER opens queue
+- history count opens history
+- queue count opens queue
 - blocked state red
 - skipped state gray/struck
 
@@ -901,10 +833,11 @@ desktop
 No page-level horizontal scrolling.
 
 Full:
-2 equal columns whenever practical.
+three columns on wide screens; focus above two task columns at narrow widths.
+Sparse plans use only the columns needed.
 
 Compact:
-fixed narrow anchor + two equal task columns.
+one current-status row plus a queue or history count button.
 
 At very narrow width, reduce internal padding before reducing readable text.
 
@@ -934,9 +867,9 @@ C. A single inline widget renders.
 D. The model progresses through tasks while the widget updates.
 E. Task IDs remain stable.
 F. Timers remain correct after reload/restart.
-G. Full view matches the agreed 2x2 design.
-H. Compact view matches the agreed two-row design.
-I. DONE/NEXT drawers work as toggles.
+G. Full view shows the focus and up to two other tasks in three columns.
+H. Compact view shows one status row and a count control.
+I. Queue and history drawers work as toggles.
 J. Current dot animates subtly.
 K. Block/resume produces correct timings.
 L. No visible value is inferred or fabricated.

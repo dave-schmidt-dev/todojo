@@ -25,12 +25,15 @@ Live, numbered to-do tracking for substantial ChatGPT and Codex work.
 | `assets/icons/todojo-light.png` / `todojo-dark.png` | Separate light and dark theme icon variants included in the local package. |
 | `server/src/` | Typed plan model, SQLite repository, timers, MCP tools, and progress callbacks. |
 | `bin/todojo-mcp` | Executable stdio MCP launcher for a bundled install. |
+| `bin/todojo-tunnel-child` | MCP child launcher for a future private tunnel connection; forwards only the configured database path. |
 | `web/src/` | Inline Full and Compact widget, MCP Apps bridge, and styles. |
 | `scripts/verify-launcher.mjs` | Installed-entry test outside the source checkout. |
 | `plugin.json` / `mcp.json` | Portable Agent Plugins source manifests. |
 | `skills/todojo/SKILL.md` | Model workflow for keeping a plan accurate. |
 | `.agents/plugins/marketplace.json` | Repository marketplace source for the ignored package. |
 | `scripts/verify-package.mjs` | Source, artifact, and installed-byte package verification. |
+| `scripts/verify-local.mjs` | Installed local acceptance and registered-app preflight. |
+| `evals/results.md` | Candidate-specific A–M and clean-chat evidence, including untested desktop paths. |
 
 ## Planning artifacts
 
@@ -57,11 +60,15 @@ npm run verify:launcher
 npm run verify:package -- --manifest-only
 ```
 
-The SQLite repository opens in WAL mode and stores all task transitions atomically. Installed and tunnel launches must supply an absolute `TODOJO_DB_PATH`; explicit `TODOJO_DEV_MODE=1` uses this repository's ignored `.data/todojo.sqlite` during development. Snapshots include a server timestamp, total active work time, and the current task ID even when that task is blocked. `npm run test:ui` builds the self-contained widget and runs the headless Playwright suite. The MCP server runs over stdio; `bin/todojo-mcp` starts the bundled server and forwards its arguments. It does not open an HTTP listener. Installed runs require an absolute `TODOJO_DB_PATH`. Logs default beside the configured database (in project `.logs/` when the database is in project `.data/`); `TODOJO_LOG_PATH` can explicitly set another absolute path. Status events go to the MCP logging channel and stderr, while the rotating file records warnings and errors by default or debug details with `--debug`.
+The SQLite repository opens in WAL mode and stores all task transitions atomically. Before upgrading an existing unversioned database, startup creates a unique, integrity-checked pre-v1 backup beside that database, then updates schema and version in one transaction. A failed upgrade preserves its validated backup; retry takes a fresh snapshot. New databases need no backup, and future schema versions are rejected. Installed and tunnel launches must supply an absolute `TODOJO_DB_PATH`; explicit `TODOJO_DEV_MODE=1` uses this repository's ignored `.data/todojo.sqlite` during development. Snapshots include a server timestamp, total active work time, and the current task ID even when that task is blocked. `npm run test:ui` builds the self-contained widget and runs the headless Playwright suite. The MCP server runs over stdio; `bin/todojo-mcp` starts the bundled server and forwards its arguments. It does not open an HTTP listener. Installed runs require an absolute `TODOJO_DB_PATH`. Logs default beside the configured database (in project `.logs/` when the database is in project `.data/`); `TODOJO_LOG_PATH` can explicitly set another absolute path. Status events go to the MCP logging channel and stderr, while the rotating file records warnings and errors by default or debug details with `--debug`.
+
+Full uses the available width for the current task, recent history, and queued work, including descriptions and blocked reasons. Compact is a single-row summary with the current task, timer, and queue/history counts; switching views preserves the same persisted plan state.
 
 The Phase 0 gate also runs `npm run verify:vm-preflight` against a disposable macOS guest. Git hooks keep precommit checks fast; the prepush hook runs the broader gate. Build output, runtime data, logs, the test profile, and operational `HISTORY.md`/`TASKS.md` stay local and ignored.
 
-`npm run build` stages a portable ignored package in `dist/todojo`. The source manifests contain no host path or database setting; the generated package adds exactly one absolute `TODOJO_DB_PATH` to its `mcp.json`, uses the bundled `./bin/todojo-mcp`, and copies skills plus available assets. The package includes the preserved owner source art and separate light/dark icon variants. Run `npm run verify:package -- --manifest-only` before host packaging; pass `--installed-path` after installation to compare package-owned bytes. `dist/todojo-0.1.0-local.zip` is a local-test ZIP with this machine's absolute database path in its generated `mcp.json`; rebuild for the target host before any later upload.
+`npm run build` stages a portable ignored package in `dist/todojo`. The source manifests contain no host path or database setting; the generated package adds exactly one absolute `TODOJO_DB_PATH` to its `mcp.json`, uses the bundled `./bin/todojo-mcp`, and copies skills plus available assets. The package includes the preserved owner source art and separate light/dark icon variants. Run `npm run verify:package -- --manifest-only` before host packaging; pass `--installed-path` after installation to compare package-owned bytes. `dist/todojo-0.1.0-local.zip` is a local-test ZIP with this machine's absolute database path in its generated `mcp.json`; do not submit it as a public marketplace package. The light and dark icons are included for later distribution. When refreshing the local ZIP on macOS, suppress resource forks and extended attributes (for example `DITTONORSRC=1 ditto -c -k --norsrc --keepParent dist/todojo dist/todojo-0.1.0-local.zip`) and verify its regular-file list matches `dist/todojo`. Public submission is outside v0.1 and needs its own deployment design.
+
+The installed local plugin is enabled in the normal user profile so it is available across local Codex sessions; substantial multi-step work should select its skill without the user naming ToDoJo. Run `npm run verify:local` to compare isolated installed bytes, exercise the installed MCP across processes and restarts, and check the A–M record. ChatGPT tool and inline-widget acceptance requires a developer-mode registered connection. For developer-only ChatGPT testing, the optional private-tunnel child reads the built `mcp.json` and launches the MCP bundle with only `TODOJO_DB_PATH`; it does not inherit the developer tunnel runtime key. ToDoJo local installs and marketplace users do not need a ToDoJo API key or BWS setup. Once the owner supplies a real registered app ID, place it in `.app.json`, reference `./.app.json` under `extensions.com.openai.apps`, rebuild and reinstall, then run `npm run verify:local -- --tunnel-preflight`. No app ID or runtime key is committed or fabricated.
 
 ## Delivery
 
@@ -70,6 +77,6 @@ The reviewed local plan and task contract define phase gates. Complete each gate
 ## Conventions
 
 - All files self-contained under this directory.
-- Secrets in BWS. Never committed.
+- Developer-only test credentials, if used, follow the host's BWS policy and are never committed or included in an install package.
 - Update `HISTORY.md` alongside every meaningful change. Bug entries cite the files touched (`- files: path/a.py, path/b.ts`).
 - Tests verify real behavior — no smoke-only "did it run" checks.

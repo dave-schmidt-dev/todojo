@@ -3,12 +3,18 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { build } from "esbuild";
+import { validateRegisteredApp } from "./tunnel-app.mjs";
+
+const projectRoot = resolve(".");
+const hasRegisteredApp = existsSync(join(projectRoot, ".app.json"));
+if (hasRegisteredApp) validateRegisteredApp(projectRoot, projectRoot);
 
 const output = resolve("dist/todojo-mcp.mjs");
 mkdirSync(dirname(output), { recursive: true });
@@ -43,7 +49,8 @@ await build({
   define: { __TODOJO_BUNDLE__: JSON.stringify(widget) },
 });
 
-const packageRoot = resolve("dist/todojo");
+const packageRootOverride = process.env.TODOJO_PACKAGE_ROOT;
+const packageRoot = resolve(packageRootOverride ?? "dist/todojo");
 const databasePath =
   process.env.TODOJO_DB_PATH ?? resolve(".data/todojo.sqlite");
 if (!isAbsolute(databasePath)) {
@@ -51,15 +58,36 @@ if (!isAbsolute(databasePath)) {
     "TODOJO_DB_PATH must be absolute when building a plugin package",
   );
 }
-rmSync(packageRoot, { recursive: true, force: true });
+if (packageRootOverride) {
+  if (existsSync(packageRoot)) {
+    if (readdirSync(packageRoot).length > 0) {
+      throw new Error(
+        "TODOJO_PACKAGE_ROOT must point to a missing or empty directory",
+      );
+    }
+  } else {
+    mkdirSync(packageRoot, { recursive: true });
+  }
+} else {
+  rmSync(packageRoot, { recursive: true, force: true });
+}
 mkdirSync(join(packageRoot, "bin"), { recursive: true });
 cpSync(resolve("plugin.json"), join(packageRoot, "plugin.json"));
+if (hasRegisteredApp) {
+  cpSync(resolve(".app.json"), join(packageRoot, ".app.json"));
+  validateRegisteredApp(projectRoot, packageRoot);
+}
 const packageLauncher = join(packageRoot, "bin/todojo-mcp");
 writeFileSync(
   packageLauncher,
   '#!/bin/sh\nexec node "$(dirname "$0")/../todojo-mcp.mjs" "$@"\n',
 );
 chmodSync(packageLauncher, 0o755);
+cpSync(
+  resolve("bin/todojo-tunnel-child"),
+  join(packageRoot, "bin/todojo-tunnel-child"),
+);
+chmodSync(join(packageRoot, "bin/todojo-tunnel-child"), 0o755);
 cpSync(output, join(packageRoot, "todojo-mcp.mjs"));
 if (existsSync(resolve("skills")))
   cpSync(resolve("skills"), join(packageRoot, "skills"), { recursive: true });

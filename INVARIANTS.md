@@ -26,7 +26,7 @@ rationale: Server-owned UTC intervals determine task and overall work duration a
 
 ### INV-4 — The UI displays only server state
 area: ["web/src/**/*.ts", "web/src/**/*.tsx", "web/src/**/*.css"]
-gate_test: tests/todojo-ui.spec.ts
+gate_test: tests/todojo-layout.spec.ts
 threshold: 3
 rationale: Task status, counts, titles, reasons, and time come from snapshots; local state controls only presentation.
 

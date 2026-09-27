@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -7,6 +6,7 @@ import {
   statSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { validateRegisteredApp } from "./tunnel-app.mjs";
 
 const root = resolve(".");
 const args = process.argv.slice(2);
@@ -95,6 +95,14 @@ function validatePlugin(plugin, label) {
     fail(`${label} must not invent a registered ChatGPT app ID`);
 }
 
+function verifyRegisteredApp(sourceRoot, packagePath, label) {
+  try {
+    return validateRegisteredApp(sourceRoot, packagePath);
+  } catch (error) {
+    fail(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function validateMcp(mcp, label, generated = false) {
   equalKeys(mcp, ["$schema", "mcpServers"], label);
   if (mcp.$schema !== mcpSchema)
@@ -131,8 +139,25 @@ function filesRelativeTo(directory) {
   return files.sort();
 }
 
-function hash(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+function installedFilesRelativeTo(directory) {
+  const files = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      const file = relative(directory, path);
+      if (file === ".codex-plugin") continue;
+      if (entry.isSymbolicLink()) {
+        fail(
+          `installed package contains symlink outside .codex-plugin: ${file}`,
+        );
+      }
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) files.push(file);
+      else fail(`installed package contains unsupported entry: ${file}`);
+    }
+  };
+  walk(directory);
+  return files.sort();
 }
 
 function verifySource() {
@@ -140,6 +165,11 @@ function verifySource() {
   const mcp = readJson(join(root, "mcp.json"));
   validatePlugin(plugin, "plugin.json");
   validateMcp(mcp, "mcp.json");
+  if (existsSync(join(root, ".app.json"))) {
+    verifyRegisteredApp(root, root, "source app binding is invalid");
+  } else if (plugin.extensions?.["com.openai"]?.apps !== undefined) {
+    fail("plugin.json references a registered app but .app.json is missing");
+  }
   const sourceMcpText = readFileSync(join(root, "mcp.json"), "utf8");
   if (
     /TODOJO_DB_PATH|plugin_asdk_app|(?:^|["'])\/(?:Users|home|private)\//m.test(
@@ -173,16 +203,24 @@ function verifyArtifact() {
   const packageMcp = readJson(join(packageRoot, "mcp.json"));
   validatePlugin(packagePlugin, "dist/todojo/plugin.json");
   validateMcp(packageMcp, "dist/todojo/mcp.json", true);
+  if (existsSync(join(root, ".app.json"))) {
+    verifyRegisteredApp(root, packageRoot, "packaged app binding is invalid");
+  } else if (existsSync(join(packageRoot, ".app.json"))) {
+    fail("dist/todojo/.app.json exists without a registered source app");
+  }
   for (const path of [
     "bin/todojo-mcp",
+    "bin/todojo-tunnel-child",
     "todojo-mcp.mjs",
     "skills/todojo/SKILL.md",
   ]) {
     if (!existsSync(join(packageRoot, path)))
       fail(`dist/todojo/${path} is missing`);
   }
-  if ((statSync(join(packageRoot, "bin/todojo-mcp")).mode & 0o111) === 0)
-    fail("packaged launcher is not executable");
+  for (const launcher of ["bin/todojo-mcp", "bin/todojo-tunnel-child"]) {
+    if ((statSync(join(packageRoot, launcher)).mode & 0o111) === 0)
+      fail(`packaged ${launcher} is not executable`);
+  }
   if (
     !readFileSync(join(packageRoot, "bin/todojo-mcp"), "utf8").includes(
       "../todojo-mcp.mjs",
@@ -225,12 +263,25 @@ function verifyInstalled(path) {
   const installed = resolve(path);
   if (!existsSync(installed) || !lstatSync(installed).isDirectory())
     fail(`installed path is not a directory: ${path}`);
-  for (const file of filesRelativeTo(packageRoot)) {
+  const expectedFiles = filesRelativeTo(packageRoot);
+  const installedFiles = installedFilesRelativeTo(installed);
+  const expectedSet = new Set(expectedFiles);
+  const installedSet = new Set(installedFiles);
+  const unexpectedFiles = installedFiles.filter(
+    (file) => !expectedSet.has(file),
+  );
+  if (unexpectedFiles.length) {
+    const list = unexpectedFiles.join(", ");
+    fail(`installed package contains unexpected files: ${list}`);
+  }
+  for (const file of expectedFiles) {
     const installedFile = join(installed, file);
-    if (!existsSync(installedFile))
-      fail(`installed package is missing ${file}`);
-    if (hash(join(packageRoot, file)) !== hash(installedFile))
+    if (!installedSet.has(file)) fail(`installed package is missing ${file}`);
+    if (
+      !readFileSync(join(packageRoot, file)).equals(readFileSync(installedFile))
+    ) {
       fail(`installed bytes differ for ${file}`);
+    }
   }
   const overlay = join(installed, ".codex-plugin");
   console.log(

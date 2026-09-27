@@ -25,6 +25,10 @@ const suites = {
     "package",
     "model-instructions",
     "installed-launcher",
+    "installed-db",
+    "local-desktop",
+    "tunnel-env",
+    "tunnel-acceptance",
   ],
 };
 

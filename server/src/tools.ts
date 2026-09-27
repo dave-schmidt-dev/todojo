@@ -244,7 +244,7 @@ export function registerTodojoTools(
         "Reorder all task IDs, or only a queued subset. Full lists set all positions; queued subsets reorder only their existing slots. Display IDs never change.",
       inputSchema: z.object({
         plan_id: planId,
-        ordered_task_ids: z.array(taskReference).min(1).max(100),
+        ordered_task_ids: z.array(taskReference).min(1),
       }),
       outputSchema: taskPlanSchema,
       ...modelOnly,

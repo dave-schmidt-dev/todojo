@@ -1,4 +1,6 @@
-import type { Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { expect, type Page } from "@playwright/test";
 
 export type FixtureState =
   | "active"
@@ -6,6 +8,23 @@ export type FixtureState =
   | "completed"
   | "sparse"
   | "skipped";
+
+export function resourceHtml(): string {
+  const bundle = readFileSync(resolve("dist/todojo-widget.js"), "utf8");
+  return `<!doctype html><html><body><main id="todojo"></main><script>${bundle}</script></body></html>`;
+}
+
+export async function mount(
+  page: Page,
+  state: FixtureState = "active",
+  long = false,
+): Promise<void> {
+  await installWidgetBridge(page, planFixture(state, long));
+  await page.goto(
+    `data:text/html;charset=utf-8,${encodeURIComponent(resourceHtml())}`,
+  );
+  await expect(page.locator("[data-view]")).toBeVisible();
+}
 
 const base = "2026-09-24T12:00:00.000Z";
 const id = (number: number) =>
@@ -76,21 +95,30 @@ export function planFixture(state: FixtureState = "active", long = false) {
 export async function installWidgetBridge(
   page: Page,
   plan: ReturnType<typeof planFixture>,
-  options: { fail?: boolean; latencyMs?: number | number[] } = {},
+  options: {
+    fail?: boolean;
+    latencyMs?: number | number[];
+    connectFailures?: number;
+  } = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ initial, fail, latencyMs }) => {
+    ({ initial, fail, latencyMs, connectFailures }) => {
       let listener: ((value: unknown) => void) | undefined;
       let latest = initial;
       let shouldFail = fail;
+      let remainingConnectFailures = connectFailures;
       let delays = Array.isArray(latencyMs) ? latencyMs : [latencyMs];
       let pollCount = 0;
+      let connectCount = 0;
+      let listenerCount = 0;
       (
         window as unknown as {
           __todojoSetPlan?: (plan: unknown, notify?: boolean) => void;
           __todojoFail?: (value: boolean) => void;
           __todojoSetLatency?: (value: number) => void;
           __todojoPollCount?: () => number;
+          __todojoConnectCount?: () => number;
+          __todojoListenerCount?: () => number;
         }
       ).__todojoSetPlan = (plan, notify = true) => {
         latest = plan;
@@ -110,14 +138,27 @@ export async function installWidgetBridge(
         window as unknown as { __todojoPollCount: () => number }
       ).__todojoPollCount = () => pollCount;
       (
+        window as unknown as { __todojoConnectCount: () => number }
+      ).__todojoConnectCount = () => connectCount;
+      (
+        window as unknown as { __todojoListenerCount: () => number }
+      ).__todojoListenerCount = () => listenerCount;
+      (
         window as unknown as { __TODOJO_TEST_BRIDGE__: unknown }
       ).__TODOJO_TEST_BRIDGE__ = {
         connect: async () => {
+          connectCount += 1;
+          if (remainingConnectFailures > 0) {
+            remainingConnectFailures -= 1;
+            throw new Error("initial bridge failure");
+          }
           listener?.({ structuredContent: latest });
         },
         onToolResult: (next: (value: unknown) => void) => {
+          listenerCount += 1;
           listener = next;
           return () => {
+            listenerCount -= 1;
             listener = undefined;
           };
         },
@@ -136,6 +177,7 @@ export async function installWidgetBridge(
       initial: plan,
       fail: options.fail ?? false,
       latencyMs: options.latencyMs ?? 0,
+      connectFailures: options.connectFailures ?? 0,
     },
   );
 }

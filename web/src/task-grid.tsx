@@ -1,10 +1,5 @@
 import type { TodojoPlan, TodojoTask } from "./bridge.js";
 
-export interface CardModel {
-  role: "LAST" | "CURRENT" | "NEXT";
-  task?: TodojoTask;
-}
-
 export function orderedTasks(plan: TodojoPlan): TodojoTask[] {
   return [...plan.tasks].sort((left, right) => left.order - right.order);
 }
@@ -23,21 +18,6 @@ export function lastCompletedTask(plan: TodojoPlan): TodojoTask | undefined {
       );
     })
     .at(-1);
-}
-
-export function cardModels(plan: TodojoPlan): CardModel[] {
-  const tasks = orderedTasks(plan);
-  const done = lastCompletedTask(plan);
-  const current =
-    tasks.find((task) => task.id === plan.current_task_id) ??
-    tasks.find((task) => task.status === "active" || task.status === "blocked");
-  const next = tasks.filter((task) => task.status === "queued").slice(0, 2);
-  return [
-    { role: "LAST", task: done },
-    { role: "CURRENT", task: current },
-    { role: "NEXT", task: next[0] },
-    { role: "NEXT", task: next[1] },
-  ];
 }
 
 /** Duration represented by a server snapshot; open intervals end at as_of. */

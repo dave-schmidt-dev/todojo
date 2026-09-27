@@ -6,6 +6,7 @@ import { resolveLogPath, TodojoLogger } from "./logging.js";
 import type { ProgressEvent } from "./progress.js";
 import { registerTodojoResource } from "./resource.js";
 import {
+  type MigrationStartupEvent,
   type SQLiteStoreOptions,
   SQLiteTaskPlanRepository,
 } from "./sqlite-store.js";
@@ -23,13 +24,25 @@ export interface TodojoServerOptions {
   logger?: TodojoLogger;
 }
 
+function reportMigrationStartup(event: MigrationStartupEvent): void {
+  process.stderr.write(`todojo migration ${event.phase}\n`);
+}
+
 /** Creates the stdio-only MCP server and registers the sole ToDoJo resource. */
 export function createTodojoServer(options: TodojoServerOptions = {}): {
   server: McpServer;
   repository: SQLiteTaskPlanRepository;
 } {
+  const providedStatus = options.store?.onMigrationStatus;
   const repository =
-    options.repository ?? new SQLiteTaskPlanRepository(options.store);
+    options.repository ??
+    new SQLiteTaskPlanRepository({
+      ...options.store,
+      onMigrationStatus: (event) => {
+        providedStatus?.(event);
+        reportMigrationStartup(event);
+      },
+    });
   const logger =
     options.logger ?? new TodojoLogger(resolveLogPath(repository.dbPath));
   const server = new McpServer(

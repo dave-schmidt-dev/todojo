@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const config = JSON.parse(readFileSync(join(packageRoot, "mcp.json"), "utf8"));
+const dbPath = config.mcpServers?.todojo?.env?.TODOJO_DB_PATH;
+if (typeof dbPath !== "string" || !isAbsolute(dbPath)) {
+  throw new Error("ToDoJo tunnel child needs a packaged absolute database path");
+}
+
+// The tunnel transport receives the runtime credential. Its MCP child receives
+// only the database path, regardless of other variables in this process.
+const child = spawn(process.execPath, [join(packageRoot, "todojo-mcp.mjs")], {
+  cwd: packageRoot,
+  env: { TODOJO_DB_PATH: dbPath },
+  stdio: "inherit",
+});
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => child.kill(signal));
+}
+child.on("error", (error) => {
+  process.stderr.write(`ToDoJo tunnel child failed: ${error.message}\n`);
+  process.exitCode = 1;
+});
+child.on("exit", (code, signal) => {
+  process.exitCode = signal ? 128 + (signal === "SIGINT" ? 2 : 15) : (code ?? 1);
+});

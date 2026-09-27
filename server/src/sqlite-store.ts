@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import {
+  closeSync,
+  fsyncSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  unlinkSync,
+} from "node:fs";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
@@ -24,7 +31,15 @@ export interface SQLiteStoreOptions {
   dbPath?: string;
   clock?: Clock;
   busyTimeoutMs?: number;
+  /** Receives safe, value-free startup migration progress. */
+  onMigrationStatus?: (event: MigrationStartupEvent) => void;
+  /** Internal synchronization point for contention verification. */
+  onMigrationBackupReady?: () => void;
 }
+
+export type MigrationStartupEvent = {
+  phase: "pending" | "result" | "error";
+};
 
 type PlanRow = {
   id: string;
@@ -52,6 +67,53 @@ type TaskRow = {
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const developmentDatabase = resolve(repositoryRoot, ".data", "todojo.sqlite");
+const startupBusyTimeoutMs = 5_000;
+const walRetryWindowMs = 5_000;
+const walRetryDelayMs = 25;
+const retryWait = new Int32Array(new SharedArrayBuffer(4));
+
+function isLockContention(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /database is (?:locked|busy)|SQLITE_(?:BUSY|LOCKED)/i.test(error.message)
+  );
+}
+
+function waitForWalRetry(delayMs: number): void {
+  Atomics.wait(retryWait, 0, 0, delayMs);
+}
+
+function fsyncFile(path: string): void {
+  const descriptor = openSync(path, "r");
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function fsyncDirectory(path: string): void {
+  const descriptor = openSync(path, "r");
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function removeIfPresent(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch (error: unknown) {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "ENOENT"
+    ) {
+      throw error;
+    }
+  }
+}
 
 /** Resolves only an absolute configured path, except for explicit repo-local development. */
 export function resolveDatabasePath(options: SQLiteStoreOptions = {}): string {
@@ -72,6 +134,8 @@ export class SQLiteTaskPlanRepository implements TaskPlanRepository {
   readonly dbPath: string;
   private readonly database: DatabaseSync;
   private readonly clock: Clock;
+  private readonly onMigrationStatus?: SQLiteStoreOptions["onMigrationStatus"];
+  private readonly onMigrationBackupReady?: SQLiteStoreOptions["onMigrationBackupReady"];
   private transactionDepth = 0;
 
   constructor(options: SQLiteStoreOptions = {}) {
@@ -79,15 +143,38 @@ export class SQLiteTaskPlanRepository implements TaskPlanRepository {
     mkdirSync(dirname(this.dbPath), { recursive: true });
     this.database = new DatabaseSync(this.dbPath);
     this.clock = options.clock ?? systemClock;
-    this.database.exec(
-      "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;",
-    );
-    if (options.busyTimeoutMs !== undefined) {
-      this.database.exec(
-        `PRAGMA busy_timeout = ${Math.min(10_000, Math.max(0, Math.floor(options.busyTimeoutMs)))};`,
-      );
+    this.onMigrationStatus = options.onMigrationStatus;
+    this.onMigrationBackupReady = options.onMigrationBackupReady;
+    try {
+      // Startup may block while reading the version, switching journal mode, or
+      // acquiring the migration write lock. Report the whole lifecycle once.
+      this.reportMigration("pending");
+
+      // This is connection-local, so it is safe before the preflight read and
+      // ensures that concurrent openers do not fail immediately on that read.
+      this.database.exec(`PRAGMA busy_timeout = ${startupBusyTimeoutMs}`);
+
+      // Do not switch a database from a newer runtime into WAL before rejecting it.
+      // migrate() rechecks while holding the source write lock.
+      if (this.userVersion(this.database) > 1) {
+        throw new Error(
+          "database schema version is newer than this ToDoJo runtime",
+        );
+      }
+      this.configureWalMode();
+      this.database.exec("PRAGMA foreign_keys = ON");
+      this.migrate();
+      if (options.busyTimeoutMs !== undefined) {
+        this.database.exec(
+          `PRAGMA busy_timeout = ${Math.min(10_000, Math.max(0, Math.floor(options.busyTimeoutMs)))};`,
+        );
+      }
+      this.reportMigration("result");
+    } catch (error) {
+      this.reportMigration("error");
+      this.database.close();
+      throw error;
     }
-    this.migrate();
   }
 
   createPlan(input: CreatePlanInput, status?: StatusCallback): TaskPlan {
@@ -382,7 +469,64 @@ export class SQLiteTaskPlanRepository implements TaskPlanRepository {
     this.database.close();
   }
 
+  /** Selects WAL with bounded retries while another opener may hold the mode lock. */
+  private configureWalMode(): void {
+    const deadline = Date.now() + walRetryWindowMs;
+    this.database.exec(`PRAGMA busy_timeout = ${walRetryDelayMs}`);
+    try {
+      while (true) {
+        try {
+          const journal = this.database
+            .prepare("PRAGMA journal_mode = WAL")
+            .get() as { journal_mode: string };
+          if (journal.journal_mode.toLowerCase() !== "wal") {
+            throw new Error("database did not enter WAL journal mode");
+          }
+          return;
+        } catch (error) {
+          if (!isLockContention(error) || Date.now() >= deadline) throw error;
+          waitForWalRetry(Math.min(walRetryDelayMs, deadline - Date.now()));
+        }
+      }
+    } finally {
+      this.database.exec(`PRAGMA busy_timeout = ${startupBusyTimeoutMs}`);
+    }
+  }
+
   private migrate(): void {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const version = this.userVersion(this.database);
+      if (version > 1) {
+        throw new Error(
+          "database schema version is newer than this ToDoJo runtime",
+        );
+      }
+      if (version === 1) {
+        this.database.exec("COMMIT");
+        return;
+      }
+
+      const needsBackup = this.hasApplicationTables();
+      if (needsBackup) {
+        this.ensurePreMigrationBackup();
+        this.onMigrationBackupReady?.();
+      }
+      this.applySchemaMigration();
+      this.database.exec("PRAGMA user_version = 1");
+      this.database.exec("COMMIT");
+    } catch (error) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+        // The source connection is being closed by the constructor on failure.
+      }
+      throw error;
+    }
+  }
+
+  /** Applies all schema changes while the caller owns the source write lock. */
+  private applySchemaMigration(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS plans (
         id TEXT PRIMARY KEY, title TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -405,14 +549,111 @@ export class SQLiteTaskPlanRepository implements TaskPlanRepository {
       name: string;
     }[];
     if (!columns.some((column) => column.name === "current_task_id")) {
+      // Legacy databases have no authoritative pointer. Prefer active work;
+      // otherwise preserve blocked work. Corrupt legacy data is resolved by
+      // task order and then ID so every migration has the same result.
       this.database.exec("ALTER TABLE plans ADD COLUMN current_task_id TEXT");
       this.database.exec(`
         UPDATE plans SET current_task_id = (
           SELECT tasks.id FROM tasks
-          WHERE tasks.plan_id = plans.id AND tasks.status = 'active'
-          ORDER BY tasks.task_order LIMIT 1
+          WHERE tasks.plan_id = plans.id AND tasks.status IN ('active', 'blocked')
+          ORDER BY
+            CASE tasks.status WHEN 'active' THEN 0 ELSE 1 END,
+            tasks.task_order,
+            tasks.id
+          LIMIT 1
         )
       `);
+    }
+  }
+
+  private hasApplicationTables(): boolean {
+    const row = this.database
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+      )
+      .get() as { 1: number } | undefined;
+    return row !== undefined;
+  }
+
+  private ensurePreMigrationBackup(): void {
+    const backupPath = this.nextBackupPath();
+    const stagingPath = `${backupPath}.staging`;
+    try {
+      const backupDatabase = new DatabaseSync(this.dbPath);
+      try {
+        backupDatabase.prepare("VACUUM INTO ?").run(stagingPath);
+      } finally {
+        backupDatabase.close();
+      }
+      this.validateBackup(stagingPath);
+      fsyncFile(stagingPath);
+      fsyncDirectory(dirname(stagingPath));
+      this.publishBackup(stagingPath, backupPath);
+      fsyncDirectory(dirname(backupPath));
+    } catch (error) {
+      removeIfPresent(stagingPath);
+      throw error;
+    }
+    removeIfPresent(stagingPath);
+  }
+
+  private nextBackupPath(): string {
+    return resolve(
+      dirname(this.dbPath),
+      `${basename(this.dbPath)}.pre-v1-${randomUUID()}.sqlite`,
+    );
+  }
+
+  private publishBackup(stagingPath: string, initialPath: string): void {
+    let backupPath = initialPath;
+    while (true) {
+      try {
+        // link(2) is an atomic no-clobber publish operation within this directory.
+        linkSync(stagingPath, backupPath);
+        return;
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "EEXIST"
+        ) {
+          backupPath = this.nextBackupPath();
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  private validateBackup(path: string): void {
+    const backup = new DatabaseSync(path, { readOnly: true });
+    try {
+      const integrity = backup.prepare("PRAGMA integrity_check").get() as {
+        integrity_check: string;
+      };
+      if (
+        integrity.integrity_check !== "ok" ||
+        this.userVersion(backup) !== 0
+      ) {
+        throw new Error("pre-migration database backup validation failed");
+      }
+    } finally {
+      backup.close();
+    }
+  }
+
+  private userVersion(database: DatabaseSync): number {
+    return (
+      database.prepare("PRAGMA user_version").get() as { user_version: number }
+    ).user_version;
+  }
+
+  private reportMigration(phase: MigrationStartupEvent["phase"]): void {
+    try {
+      this.onMigrationStatus?.({ phase });
+    } catch {
+      // Observability must never alter database startup correctness.
     }
   }
 

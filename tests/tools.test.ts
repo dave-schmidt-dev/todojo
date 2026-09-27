@@ -175,3 +175,44 @@ test("reorder tool preserves full and queued-subset behavior", async () => {
     await server.close();
   }
 });
+
+test("reorder tool supports a full plan grown beyond the create limit", async () => {
+  const { client, server, repository } = await connected("large-reorder");
+  try {
+    const created = await client.callTool({
+      name: "create_task_plan",
+      arguments: {
+        tasks: Array.from({ length: 100 }, (_, index) => ({
+          title: `task ${index + 1}`,
+        })),
+      },
+    });
+    const plan = created.structuredContent as { plan_id: string };
+    const added = await client.callTool({
+      name: "add_task",
+      arguments: { plan_id: plan.plan_id, title: "task 101" },
+    });
+    const taskIds = (
+      added.structuredContent as { tasks: { display_id: string }[] }
+    ).tasks.map((task) => task.display_id);
+    assert.equal(taskIds.at(-1), "T101");
+
+    const reordered = await client.callTool({
+      name: "reorder_tasks",
+      arguments: {
+        plan_id: plan.plan_id,
+        ordered_task_ids: [...taskIds].reverse(),
+      },
+    });
+    assert.deepEqual(
+      (
+        reordered.structuredContent as { tasks: { display_id: string }[] }
+      ).tasks.map((task) => task.display_id),
+      [...taskIds].reverse(),
+    );
+  } finally {
+    await client.close();
+    repository.close();
+    await server.close();
+  }
+});

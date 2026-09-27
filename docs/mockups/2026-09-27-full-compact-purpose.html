@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ToDoJo Full and Compact purpose preview</title>
+  <style>
+    :root{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif}
+    *{box-sizing:border-box}body{margin:0;background:#151515;color:#f5f1e8}
+    button,select{font:inherit}button{cursor:pointer;color:inherit}
+    .controls{max-width:760px;margin:0 auto;padding:12px 12px 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#c9c6bf;font-size:12px}
+    .controls strong{color:#f5f1e8;letter-spacing:.06em}.controls select{color:#f5f1e8;background:#242321;border:1px solid #45433f;border-radius:5px;padding:4px}
+    .widget{max-width:760px;margin:0 auto;padding:12px;color:#f5f1e8}
+    .head{display:flex;align-items:center;gap:8px;min-width:0;margin-bottom:7px;font-size:12px}
+    .brand{font-weight:750;letter-spacing:.08em;white-space:nowrap}.plan{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c9c6bf}
+    .work{white-space:nowrap;color:#c9c6bf;font-variant-numeric:tabular-nums}
+    .mode,.link,.close{border:1px solid #45433f;background:#242321;border-radius:5px;padding:5px 8px}
+    .mode:focus-visible,.link:focus-visible,.close:focus-visible,.item:focus-visible,.current:focus-visible,.quick:focus-visible{outline:2px solid #e5dfd4;outline-offset:2px}
+    .full{border:1px solid #3a3936;border-radius:7px;overflow:hidden;background:#1d1d1b}
+    .full-grid{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr))}
+    .full-grid>*+*{border-left:1px solid #3a3936}
+    .current{display:block;width:100%;min-width:0;border:0;border-left:3px solid #5799d5;background:#20201e;padding:10px 12px;text-align:left}
+    .current.blocked{border-left-color:#d35d50}.current.completed{border-left-color:#55a878}
+    .eyebrow{display:flex;gap:6px;align-items:center;color:#c9c6bf;font-size:10px;font-weight:750;letter-spacing:.08em}
+    .timer{margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:0}
+    .title{display:block;margin-top:5px;font-size:17px;font-weight:650;line-height:1.2}
+    .description{display:block;margin-top:5px;color:#c9c6bf;font-size:12px;line-height:1.35}
+    .reason{display:block;margin-top:5px;color:#f0b0a8;font-size:12px;line-height:1.35}
+    .full-foot{display:flex;align-items:center;gap:8px;padding:5px 10px;border-top:1px solid #3a3936;color:#c9c6bf;font-size:11px}
+    .full-foot .link{margin-left:auto;padding:2px 6px;font-size:11px}
+    .item{display:block;width:100%;min-width:0;border:0;background:transparent;text-align:left;padding:10px 12px;color:#f5f1e8}
+    .item .eyebrow{color:#c99a45}.item .title{font-size:14px;margin-top:5px}
+    .item .description{margin-top:2px}.recent .eyebrow{color:#78b58b}
+    .compact{display:flex;align-items:center;min-width:0;border:1px solid #3a3936;border-radius:7px;background:#20201e;overflow:hidden}
+    .quick{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:0;border-left:3px solid #5799d5;padding:8px 10px;background:transparent;text-align:left}
+    .quick.blocked{border-left-color:#d35d50}.quick.completed{border-left-color:#55a878}
+    .quick .label{color:#c9c6bf;font-size:10px;font-weight:750;letter-spacing:.07em;white-space:nowrap}
+    .quick .quick-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650}
+    .quick .timer{color:#c9c6bf;font-size:11px}.compact .link{flex:none;margin-right:7px;padding:3px 6px;font-size:11px;white-space:nowrap}
+    .drawer{margin-top:7px;border:1px solid #55524d;border-radius:7px;padding:10px;background:#1c1c1a;font-size:12px;line-height:1.4}
+    .drawer-head{display:flex;gap:8px;align-items:start}.drawer-head strong{flex:1}.drawer p{margin:8px 0 0;color:#d0cdc6}.drawer .close{padding:2px 7px}
+    @media(max-width:600px){.full-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.full-grid .current{grid-column:1/-1;border-bottom:1px solid #3a3936}.full-grid .item:nth-child(2){border-left:0}}
+    @media(max-width:420px){.controls,.widget{padding-left:7px;padding-right:7px}.head{gap:4px;font-size:11px}.work{font-size:10px}.mode{padding:4px 6px}.current,.item{padding:9px}.quick{gap:5px;padding:7px}.quick .label{font-size:9px}.quick .quick-title{font-size:12px}.quick .timer{font-size:10px}}
+  </style>
+</head>
+<body>
+  <div class="controls"><strong>DESIGN PREVIEW · SAMPLE DATA</strong><label>State <select id="state"><option value="active">Working</option><option value="blocked">Blocked</option><option value="completed">Completed</option></select></label><label><input id="descriptions" type="checkbox"> With descriptions</label></div>
+  <main class="widget" id="app"></main>
+  <script>
+    const plan={title:'Diagnose Switchyard Vibe failures and usage',tasks:[
+      {id:'T1',title:'Reconcile recent runs and usage evidence',description:'Compare run receipts with recorded usage and identify the first inconsistent result.',status:'active',time:'0:48'},
+      {id:'T2',title:'Reproduce and isolate current failure',description:'Use the smallest repeatable case to locate the failing boundary.',status:'queued',time:'0:00'},
+      {id:'T3',title:'Fix and verify confirmed cause',description:'Apply the confirmed fix and run the focused regression checks.',status:'queued',time:'0:00'},
+      {id:'T4',title:'Record the outcome and remaining limits',description:'Capture the result and any acceptance boundary.',status:'queued',time:'0:00'}]};
+    let mode='full',drawer='';
+    const $=(id)=>document.getElementById(id);
+    function state(){return $('state').value}
+    function withDescriptions(){return $('descriptions').checked}
+    function records(){const s=state();return plan.tasks.map((task,index)=>({...task,status:s==='completed'?'completed':index===0?s:'queued',time:index===0?'0:48':'0:00'}))}
+    function details(task){return withDescriptions()?`<span class="description">${task.description}</span>`:''}
+    function currentCard(task){return `<button class="current ${task.status}" data-task="${task.id}"><span class="eyebrow">${task.status==='active'?'● CURRENT':task.status==='blocked'?'● BLOCKED':'✓ COMPLETE'} · ${task.id}<span class="timer">${task.time}</span></span><span class="title">${task.title}</span>${task.status==='blocked'?'<span class="reason">Waiting for a reproducible failure receipt.</span>':''}${details(task)}</button>`}
+    function queueItem(task){return `<button class="item" data-task="${task.id}"><span class="eyebrow">NEXT · ${task.id}</span><span class="title">${task.title}</span>${details(task)}</button>`}
+    function fullView(tasks){const queue=tasks.filter(t=>t.status==='queued');const completed=tasks.filter(t=>t.status==='completed');const current=tasks.find(t=>t.status==='active'||t.status==='blocked')||tasks.at(-1);const other=queue.length?queue.slice(0,2).map(queueItem):completed.slice(-3,-1).reverse().map(t=>`<button class="item recent" data-task="${t.id}"><span class="eyebrow">✓ ${t.id} · COMPLETE</span><span class="title">${t.title}</span></button>`);return `<div class="full"><div class="full-grid">${currentCard(current)}${other.join('')}</div><div class="full-foot"><span>${queue.length} queued · ${completed.length} done</span><button class="link" data-drawer="${queue.length?'queue':'history'}">${queue.length?'Show all tasks':'History'}</button></div></div>`}
+    function compactView(tasks){const current=tasks.find(t=>t.status==='active'||t.status==='blocked')||tasks.at(-1);const queue=tasks.filter(t=>t.status==='queued');return `<div class="compact"><button class="quick ${current.status}" data-task="${current.id}"><span class="label">${current.status==='active'?'● NOW':current.status==='blocked'?'● BLOCKED':'✓ DONE'} · ${current.id}</span><span class="quick-title">${current.title}</span><span class="timer">${current.time}</span></button><button class="link" data-drawer="${queue.length?'queue':'history'}">${queue.length?`+${queue.length} queued`:'History'}</button></div>`}
+    function drawerView(tasks){if(!drawer)return '';if(drawer==='queue')return `<aside class="drawer"><div class="drawer-head"><strong>Queued tasks</strong><button class="close" data-close>Close</button></div>${tasks.filter(t=>t.status==='queued').map(t=>`<p>${t.id} · ${t.title}</p>`).join('')||'<p>No queued tasks</p>'}</aside>`;if(drawer==='history')return `<aside class="drawer"><div class="drawer-head"><strong>Completed history</strong><button class="close" data-close>Close</button></div>${tasks.filter(t=>t.status==='completed').map(t=>`<p>${t.id} · ${t.title} · ${t.time}</p>`).join('')||'<p>No completed tasks</p>'}</aside>`;const task=tasks.find(t=>t.id===drawer);return task?`<aside class="drawer"><div class="drawer-head"><strong>${task.id} · ${task.title}</strong><button class="close" data-close>Close</button></div><p>${task.status.toUpperCase()} · ${task.time}</p><p>${task.description}</p></aside>`:''}
+    function render(){const tasks=records();$('app').innerHTML=`<header class="head"><span class="brand">LIVE TASKS</span><span class="plan">${plan.title}</span><span class="work">WORK 0:48</span><button class="mode" id="mode">${mode==='full'?'Compact':'Full'}</button></header>${mode==='full'?fullView(tasks):compactView(tasks)}${drawerView(tasks)}`;$('mode').onclick=()=>{mode=mode==='full'?'compact':'full';drawer='';render()};document.querySelectorAll('[data-task]').forEach(el=>{el.onclick=()=>{drawer=drawer===el.dataset.task?'':el.dataset.task;render()}});document.querySelectorAll('[data-drawer]').forEach(el=>{el.onclick=()=>{drawer=drawer===el.dataset.drawer?'':el.dataset.drawer;render()}});document.querySelectorAll('[data-close]').forEach(el=>{el.onclick=()=>{drawer='';render()}})}
+    $('state').onchange=()=>{drawer='';render()};$('descriptions').onchange=render;render();
+  </script>
+</body>
+</html>

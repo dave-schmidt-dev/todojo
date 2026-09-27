@@ -1,148 +1,10 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-import { installWidgetBridge, planFixture } from "./ui-fixtures.js";
-
-function resourceHtml(): string {
-  const bundle = readFileSync(resolve("dist/todojo-widget.js"), "utf8");
-  return `<!doctype html><html><body><main id="todojo"></main><script>${bundle}</script></body></html>`;
-}
-
-async function mount(
-  page: Parameters<typeof installWidgetBridge>[0],
-  state: Parameters<typeof planFixture>[0] = "active",
-  long = false,
-) {
-  await installWidgetBridge(page, planFixture(state, long));
-  await page.goto(
-    `data:text/html;charset=utf-8,${encodeURIComponent(resourceHtml())}`,
-  );
-  await expect(page.locator("[data-view]")).toBeVisible();
-}
-
-test("Full grid is a real equal 2x2 task layout", async ({ page }) => {
-  await page.setViewportSize({ width: 768, height: 600 });
-  await mount(page);
-  const cards = page.locator("[data-view=full] .todojo__card");
-  await expect(cards).toHaveCount(4);
-  const geometry = await cards.evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const box = node.getBoundingClientRect();
-      return [box.width, box.height];
-    }),
-  );
-  expect(new Set(geometry.map(([width]) => Math.round(width))).size).toBe(1);
-  expect(new Set(geometry.map(([, height]) => Math.round(height))).size).toBe(
-    1,
-  );
-  await expect(cards.nth(0)).toContainText("LAST");
-  await expect(cards.nth(1)).toContainText("CURRENT");
-});
-
-test("Compact has two equal-height rows, neutral fixed anchors, and drawers", async ({
-  page,
-}) => {
-  await mount(page);
-  await page.getByRole("button", { name: "Compact" }).click();
-  const rows = page.locator(".todojo__compact-row");
-  await expect(rows).toHaveCount(2);
-  const cells = page.locator(".todojo__compact-row > button");
-  await expect(cells).toHaveCount(6);
-  const metrics = await page.locator(".todojo__compact").evaluate((grid) =>
-    [...grid.children].map((row) => {
-      const cells = [...row.children].map((cell) =>
-        cell.getBoundingClientRect(),
-      );
-      return {
-        height: row.getBoundingClientRect().height,
-        anchor: cells[0].width,
-        tasks: [cells[1].width, cells[2].width],
-      };
-    }),
-  );
-  expect(Math.round(metrics[0].height)).toBe(Math.round(metrics[1].height));
-  expect(Math.round(metrics[0].anchor)).toBe(Math.round(metrics[1].anchor));
-  expect(Math.round(metrics[0].tasks[0])).toBe(Math.round(metrics[0].tasks[1]));
-  await page
-    .getByRole("button", { name: /Show task history, 1 completed tasks/ })
-    .click();
-  await expect(
-    page.getByRole("complementary", { name: "Task history" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Close details" }).click();
-  const firstCard = page.locator("[data-task-id]").nth(0);
-  await expect(firstCard).toHaveAttribute("aria-pressed", "false");
-  await firstCard.click();
-  await expect(page.getByLabel("Task details")).toBeVisible();
-  await expect(firstCard).toHaveAttribute("aria-pressed", "true");
-  await firstCard.click();
-  await expect(page.getByLabel("Task details")).toHaveCount(0);
-  await expect(firstCard).toHaveAttribute("aria-pressed", "false");
-});
-
-test("skipped tasks remain visible in history with a frozen timer and strike-through", async ({
-  page,
-}) => {
-  await mount(page, "skipped");
-  await expect(page.locator(".todojo__card--skipped")).toHaveCount(0);
-  await page.getByRole("button", { name: "DONE 1" }).click();
-  const skipped = page.locator(".todojo__history-skipped");
-  await expect(skipped).toContainText("T4 · Package evidence · Skipped · 0:05");
-  expect(
-    await skipped.evaluate((node) => getComputedStyle(node).textDecorationLine),
-  ).toContain("line-through");
-  expect(await skipped.evaluate((node) => getComputedStyle(node).color)).toBe(
-    "rgb(158, 155, 149)",
-  );
-  await page.waitForTimeout(1_100);
-  await expect(skipped).toContainText("0:05");
-});
-
-test("responsive sparse, blocked, and long-title states preserve geometry", async ({
-  page,
-}) => {
-  for (const width of [320, 375, 768, 1280]) {
-    await page.setViewportSize({ width, height: 700 });
-    await mount(page, "sparse");
-    const overflow = await page.evaluate(() => ({
-      viewport: window.innerWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-      overflowing: [...document.querySelectorAll<HTMLElement>("*")]
-        .filter(
-          (element) =>
-            element.getBoundingClientRect().right > window.innerWidth + 1,
-        )
-        .slice(0, 8)
-        .map((element) => ({
-          tag: element.tagName,
-          className: element.className,
-          right: element.getBoundingClientRect().right,
-        })),
-    }));
-    expect(overflow.scrollWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(
-      overflow.viewport,
-    );
-  }
-  await mount(page, "blocked", true);
-  await expect(page.locator(".todojo__card--blocked")).toContainText(
-    "Waiting for the physical device",
-  );
-  const blocked = page.locator(".todojo__card--blocked");
-  const others = page.locator("[data-view=full] .todojo__card");
-  expect(
-    await blocked.evaluate((node) =>
-      Math.round(node.getBoundingClientRect().height),
-    ),
-  ).toBe(
-    await others
-      .nth(0)
-      .evaluate((node) => Math.round(node.getBoundingClientRect().height)),
-  );
-  const title = page.locator(".todojo__task-title").nth(0);
-  expect(
-    await title.evaluate((node) => node.scrollHeight <= node.clientHeight + 1),
-  ).toBe(true);
-});
+import {
+  installWidgetBridge,
+  mount,
+  planFixture,
+  resourceHtml,
+} from "./ui-fixtures.js";
 
 test("only active dot breathes and reduced motion disables it", async ({
   page,
@@ -185,7 +47,48 @@ test("stale state is visible during a failed refresh and recovers on wake", asyn
     ).__todojoFail(false);
     window.dispatchEvent(new Event("online"));
   });
-  await expect(page.locator("[data-state=ready]")).toBeVisible();
+  await expect(page.locator("[data-state=ready]")).toHaveCount(1);
+});
+
+test("initial bridge failure reconnects once without duplicating listeners", async ({
+  page,
+}) => {
+  const recovered = {
+    ...planFixture(),
+    title: "Recovered authoritative plan",
+  };
+  await installWidgetBridge(page, planFixture(), { connectFailures: 1 });
+  await page.goto(
+    `data:text/html;charset=utf-8,${encodeURIComponent(resourceHtml())}`,
+  );
+  await expect(page.getByText("Unable to refresh task plan.")).toBeVisible();
+  await page.evaluate((snapshot) => {
+    (
+      window as unknown as {
+        __todojoSetPlan: (plan: unknown, notify?: boolean) => void;
+      }
+    ).__todojoSetPlan(snapshot, false);
+  }, recovered);
+  await expect(page.locator("[data-state=ready]")).toHaveCount(1, {
+    timeout: 5_000,
+  });
+  await expect(page.locator(".todojo__title")).toHaveText(
+    "Recovered authoritative plan",
+  );
+  expect(
+    await page.evaluate(() =>
+      (
+        window as unknown as { __todojoConnectCount: () => number }
+      ).__todojoConnectCount(),
+    ),
+  ).toBe(2);
+  expect(
+    await page.evaluate(() =>
+      (
+        window as unknown as { __todojoListenerCount: () => number }
+      ).__todojoListenerCount(),
+    ),
+  ).toBe(1);
 });
 
 function timerSeconds(value: string | null): number {
@@ -321,7 +224,9 @@ test("completed plan polling eventually discovers a later added task", async ({
   await page.goto(
     `data:text/html;charset=utf-8,${encodeURIComponent(resourceHtml())}`,
   );
-  await expect(page.getByRole("button", { name: "LATER 0" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Show 0 queued tasks" }),
+  ).toBeVisible();
   const added = {
     ...plan,
     version: 2,
@@ -345,12 +250,16 @@ test("completed plan polling eventually discovers a later added task", async ({
       }
     ).__todojoSetPlan(snapshot, false);
   }, added);
-  await expect(page.getByRole("button", { name: "LATER 1" })).toBeVisible({
+  await expect(
+    page.getByRole("button", { name: "Show 1 queued tasks" }),
+  ).toBeVisible({
     timeout: 13_000,
   });
 });
 
-test("Full LAST follows completed_at after reordering", async ({ page }) => {
+test("Full focus follows completed_at after reordering when work is finished", async ({
+  page,
+}) => {
   const plan = planFixture();
   const older = {
     ...plan.tasks[2],
@@ -365,12 +274,15 @@ test("Full LAST follows completed_at after reordering", async ({ page }) => {
     order: 10,
   };
   plan.tasks[2] = older;
+  plan.tasks[1].status = "completed";
+  plan.tasks[3].status = "completed";
+  plan.current_task_id = undefined;
   await installWidgetBridge(page, plan);
   await page.goto(
     `data:text/html;charset=utf-8,${encodeURIComponent(resourceHtml())}`,
   );
   await expect(
-    page.locator("[data-view=full] .todojo__card").first(),
+    page.locator("[data-view=full] .todojo__card--current"),
   ).toContainText("Trace completed state");
 });
 

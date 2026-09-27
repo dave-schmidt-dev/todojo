@@ -1,6 +1,6 @@
 ---
 name: todojo
-description: Keep a persistent, explicit ToDoJo task plan synchronized with substantial multi-step work.
+description: "Use ToDoJo for substantial multi-step work, even when it is not mentioned: multi-file implementation, debugging requiring diagnosis and tests, research with a deliverable, or multi-stage audits. Skip trivial one-step or factual requests."
 ---
 
 Use ToDoJo for substantial multi-step work, or when the user explicitly asks for a plan. Do not create a plan for a trivial one-step request.

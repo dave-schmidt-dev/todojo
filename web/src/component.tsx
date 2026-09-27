@@ -5,8 +5,11 @@ import {
   type TodojoPlan,
   type TodojoTask,
 } from "./bridge.js";
-import { compactModels } from "./compact-grid.js";
-import { type CardModel, cardModels, taskDurationMs } from "./task-grid.js";
+import {
+  lastCompletedTask,
+  orderedTasks,
+  taskDurationMs,
+} from "./task-grid.js";
 
 type Mode = "full" | "compact";
 type Drawer =
@@ -23,10 +26,6 @@ function duration(ms: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function taskKind(task: TodojoTask | undefined): string {
-  return task?.status ?? "empty";
-}
-
 /** Stateful presentation shell: all task facts are snapshots from the MCP server. */
 export class TodojoWidget {
   private plan: TodojoPlan | undefined;
@@ -36,10 +35,13 @@ export class TodojoWidget {
   private phase: "loading" | "ready" | "stale" | "error" = "loading";
   private lastResponseAt = 0;
   private retryMs = activePollMs;
+  private connectRetryMs = activePollMs;
   private pollTimer: number | undefined;
+  private connectTimer: number | undefined;
   private tickTimer: number | undefined;
   private unlisten: (() => void) | undefined;
   private destroyed = false;
+  private connecting = false;
   private anchorPerfMs = 0;
   private snapshotMs = 0;
   private workBaselineMs = 0;
@@ -58,19 +60,15 @@ export class TodojoWidget {
     );
     window.addEventListener("online", this.wake);
     document.addEventListener("visibilitychange", this.wake);
-    this.render();
-    try {
-      await this.bridge.connect();
-    } catch {
-      this.phase = "error";
-      this.render();
-    }
     this.tickTimer = window.setInterval(() => this.renderTimers(), 250);
+    this.render();
+    await this.connect();
   }
 
   destroy(): void {
     this.destroyed = true;
     if (this.pollTimer) window.clearTimeout(this.pollTimer);
+    if (this.connectTimer) window.clearTimeout(this.connectTimer);
     if (this.tickTimer) window.clearInterval(this.tickTimer);
     this.unlisten?.();
     window.removeEventListener("online", this.wake);
@@ -78,8 +76,40 @@ export class TodojoWidget {
   }
 
   private wake = (): void => {
-    if (!document.hidden) void this.refresh(true);
+    if (document.hidden) return;
+    if (this.planId) void this.refresh(true);
+    else this.scheduleConnect(true);
   };
+
+  private async connect(): Promise<void> {
+    if (this.destroyed || this.planId || this.connecting) return;
+    this.connecting = true;
+    let failed = false;
+    try {
+      await this.bridge.connect();
+      this.connectRetryMs = activePollMs;
+    } catch {
+      failed = true;
+      if (!this.destroyed && !this.planId) {
+        this.phase = "error";
+        this.render();
+      }
+    } finally {
+      this.connecting = false;
+      if (failed && !this.destroyed && !this.planId) this.scheduleConnect();
+    }
+  }
+
+  private scheduleConnect(immediate = false): void {
+    if (this.destroyed || this.planId || this.connecting) return;
+    if (this.connectTimer) window.clearTimeout(this.connectTimer);
+    const delay = immediate ? 0 : this.connectRetryMs;
+    this.connectRetryMs = Math.min(this.connectRetryMs * 2, 16_000);
+    this.connectTimer = window.setTimeout(() => {
+      this.connectTimer = undefined;
+      void this.connect();
+    }, delay);
+  }
 
   private receive(candidate: TodojoPlan | undefined): void {
     if (!candidate || this.destroyed) return;
@@ -115,6 +145,10 @@ export class TodojoWidget {
     }
     const priorPhase = this.phase;
     this.plan = candidate;
+    if (this.connectTimer) {
+      window.clearTimeout(this.connectTimer);
+      this.connectTimer = undefined;
+    }
     this.lastResponseAt = performance.now();
     this.phase = "ready";
     this.retryMs = activePollMs;
@@ -230,31 +264,53 @@ export class TodojoWidget {
     void this.refresh(true);
   }
 
-  private taskCard(model: CardModel): string {
-    const task = model.task;
-    const status = taskKind(task);
+  private focusTask(plan: TodojoPlan): TodojoTask | undefined {
+    const tasks = orderedTasks(plan);
+    const identified = tasks.find((task) => task.id === plan.current_task_id);
+    return (
+      (identified?.status === "active" || identified?.status === "blocked"
+        ? identified
+        : undefined) ??
+      tasks.find(
+        (task) => task.status === "active" || task.status === "blocked",
+      ) ??
+      lastCompletedTask(plan)
+    );
+  }
+
+  private taskCard(
+    task: TodojoTask,
+    role: "CURRENT" | "NEXT" | "RECENT",
+  ): string {
     const selected =
-      this.drawer?.kind === "task" && this.drawer.task.id === task?.id;
-    const label = task
-      ? `${model.role} ${task.display_id}, ${task.status}, ${task.title}`
-      : `${model.role}, no task`;
+      this.drawer?.kind === "task" && this.drawer.task.id === task.id;
+    const label = `${role} ${task.display_id}, ${task.status}, ${task.title}`;
     const activeDot =
-      task?.status === "active"
+      task.status === "active"
         ? '<span class="todojo__dot" aria-hidden="true"></span>'
         : "";
     const reason =
-      task?.status === "blocked" && task.block_reason
+      task.status === "blocked" && task.block_reason
         ? `<span class="todojo__reason">${escapeHtml(task.block_reason)}</span>`
         : "";
-    return `<button class="todojo__card todojo__card--${status}${selected ? " todojo__card--selected" : ""}" ${task ? `data-task-id="${escapeHtml(task.id)}"` : "disabled"} aria-label="${escapeHtml(label)}" aria-pressed="${selected}"><span class="todojo__meta">${activeDot}${model.role} ${task ? `· ${escapeHtml(task.display_id)}` : ""}<span class="todojo__timer" data-task-timer>${task ? duration(this.currentTaskMs(task)) : ""}</span></span><span class="todojo__task-title" data-title>${task ? escapeHtml(task.title) : "No task"}</span>${reason}</button>`;
+    const description = task.description
+      ? `<span class="todojo__description">${escapeHtml(task.description)}</span>`
+      : "";
+    const statusLabel =
+      role === "CURRENT"
+        ? task.status === "blocked"
+          ? "BLOCKED"
+          : task.status === "completed"
+            ? "COMPLETE"
+            : "CURRENT"
+        : role === "RECENT"
+          ? "COMPLETE"
+          : "NEXT";
+    return `<button class="todojo__card todojo__card--${task.status} todojo__card--${role.toLowerCase()}${selected ? " todojo__card--selected" : ""}" data-task-id="${escapeHtml(task.id)}" aria-label="${escapeHtml(label)}" aria-pressed="${selected}"><span class="todojo__meta">${activeDot}${statusLabel} · ${escapeHtml(task.display_id)}<span class="todojo__timer" data-task-timer>${duration(this.currentTaskMs(task))}</span></span><span class="todojo__task-title" data-title>${escapeHtml(task.title)}</span>${reason}${description}</button>`;
   }
 
   private render(): void {
     const plan = this.plan;
-    const completed =
-      plan?.tasks.filter((task) => task.status === "completed").length ?? 0;
-    const queued =
-      plan?.tasks.filter((task) => task.status === "queued").length ?? 0;
     const status =
       this.phase === "ready"
         ? ""
@@ -268,9 +324,10 @@ export class TodojoWidget {
       : this.mode === "full"
         ? this.fullGrid(plan)
         : this.compactGrid(plan);
-    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span>${this.mode === "full" ? `<button class="todojo__header-button" data-done>DONE ${completed}</button><button class="todojo__header-button" data-next>LATER ${queued}</button>` : ""}<button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header><div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${content}${this.drawerHtml(plan)}</section>`;
+    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span><button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header><div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${content}${this.drawerHtml(plan)}</section>`;
     this.root.querySelector("[data-mode]")?.addEventListener("click", () => {
       this.mode = this.mode === "full" ? "compact" : "full";
+      this.drawer = undefined;
       this.render();
     });
     this.root.querySelector("[data-done]")?.addEventListener("click", () => {
@@ -290,15 +347,6 @@ export class TodojoWidget {
           ),
         );
       });
-    this.root
-      .querySelectorAll<HTMLButtonElement>("[data-anchor]")
-      .forEach((button) => {
-        button.addEventListener("click", () => {
-          const kind = button.dataset.anchor as "done" | "next";
-          this.drawer = this.drawer?.kind === kind ? undefined : { kind };
-          this.render();
-        });
-      });
     this.root.querySelector("[data-close]")?.addEventListener("click", () => {
       this.drawer = undefined;
       this.render();
@@ -307,16 +355,48 @@ export class TodojoWidget {
   }
 
   private fullGrid(plan: TodojoPlan): string {
-    return `<div class="todojo__grid" data-view="full" aria-label="Full task grid">${cardModels(
-      plan,
-    )
-      .map((model) => this.taskCard(model))
-      .join("")}</div>`;
+    const tasks = orderedTasks(plan);
+    const focus = this.focusTask(plan);
+    const queued = tasks.filter((task) => task.status === "queued");
+    const completed = tasks.filter((task) => task.status === "completed");
+    const recent = completed
+      .filter((task) => task.id !== focus?.id)
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.completed_at ?? "") || 0;
+        const rightTime = Date.parse(right.completed_at ?? "") || 0;
+        return rightTime - leftTime || right.order - left.order;
+      });
+    const secondary = queued.length
+      ? queued.slice(0, focus ? 2 : 3)
+      : recent.slice(0, 2);
+    const cards = [
+      ...(focus ? [this.taskCard(focus, "CURRENT")] : []),
+      ...secondary.map((task) =>
+        this.taskCard(task, queued.length ? "NEXT" : "RECENT"),
+      ),
+    ].join("");
+    return `<div class="todojo__full" data-view="full" aria-label="Full task view"><div class="todojo__grid">${cards}</div><footer class="todojo__footer"><button class="todojo__footer-button" data-next aria-label="Show ${queued.length} queued tasks">${queued.length} queued</button><span aria-hidden="true">·</span><button class="todojo__footer-button" data-done aria-label="Show task history, ${completed.length} completed tasks">${completed.length} done</button></footer></div>`;
   }
 
   private compactGrid(plan: TodojoPlan): string {
-    const models = compactModels(plan);
-    return `<div class="todojo__compact" data-view="compact" aria-label="Compact task grid"><div class="todojo__compact-row"><button class="todojo__anchor" data-anchor="done" aria-label="Show task history, ${models.completed} completed tasks"><span class="todojo__anchor-label">DONE</span><span class="todojo__anchor-count">${models.completed}</span></button>${this.taskCard({ role: "LAST", task: models.last })}${this.taskCard({ role: "CURRENT", task: models.current })}</div><div class="todojo__compact-row"><button class="todojo__anchor" data-anchor="next" aria-label="Show ${models.queued} queued tasks"><span class="todojo__anchor-label">NEXT</span><span class="todojo__anchor-count">${models.queued}</span></button>${this.taskCard({ role: "NEXT", task: models.next[0] })}${this.taskCard({ role: "NEXT", task: models.next[1] })}</div></div>`;
+    const focus = this.focusTask(plan);
+    const queued = plan.tasks.filter((task) => task.status === "queued").length;
+    const completed = plan.tasks.filter(
+      (task) => task.status === "completed",
+    ).length;
+    const kind = queued ? "next" : "done";
+    const selected =
+      this.drawer?.kind === "task" && this.drawer.task.id === focus?.id;
+    const label =
+      focus?.status === "blocked"
+        ? "BLOCKED"
+        : focus?.status === "completed"
+          ? "DONE"
+          : "NOW";
+    const focusHtml = focus
+      ? `<button class="todojo__quick todojo__quick--${focus.status}${selected ? " todojo__quick--selected" : ""}" data-task-id="${escapeHtml(focus.id)}" aria-label="${escapeHtml(`${label} ${focus.display_id}, ${focus.status}, ${focus.title}`)}" aria-pressed="${selected}"><span class="todojo__quick-label">${label} · ${escapeHtml(focus.display_id)}</span><span class="todojo__quick-title">${escapeHtml(focus.title)}</span><span class="todojo__timer" data-task-timer>${duration(this.currentTaskMs(focus))}</span></button>`
+      : '<span class="todojo__quick-empty">No current task</span>';
+    return `<div class="todojo__compact" data-view="compact" aria-label="Compact task view">${focusHtml}<button class="todojo__compact-count" data-${kind} aria-label="${kind === "next" ? `Show ${queued} queued tasks` : `Show task history, ${completed} completed tasks`}">${kind === "next" ? `+${queued} queued` : `History ${completed}`}</button></div>`;
   }
 
   private drawerHtml(plan: TodojoPlan | undefined): string {
@@ -360,7 +440,7 @@ export class TodojoWidget {
     for (const title of this.root.querySelectorAll<HTMLElement>(
       "[data-title]",
     )) {
-      let size = 17;
+      let size = title.closest(".todojo__card--current") ? 17 : 14;
       title.style.fontSize = `${size}px`;
       while (size > 13 && title.scrollHeight > title.clientHeight + 1) {
         size -= 0.5;
