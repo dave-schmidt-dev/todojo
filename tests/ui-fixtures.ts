@@ -1,9 +1,5 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-  McpUiDisplayMode,
-  McpUiHostContext,
-} from "@modelcontextprotocol/ext-apps";
 import { expect, type Page } from "@playwright/test";
 
 export type FixtureState =
@@ -103,23 +99,10 @@ export async function installWidgetBridge(
     fail?: boolean;
     latencyMs?: number | number[];
     connectFailures?: number;
-    hostContext?: McpUiHostContext;
-    displayResponses?: (McpUiDisplayMode | "error")[];
-    displayLatencyMs?: number;
-    manualDisplay?: boolean;
   } = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({
-      initial,
-      fail,
-      latencyMs,
-      connectFailures,
-      hostContext,
-      displayResponses,
-      displayLatencyMs,
-      manualDisplay,
-    }) => {
+    ({ initial, fail, latencyMs, connectFailures }) => {
       let listener: ((value: unknown) => void) | undefined;
       let latest = initial;
       let shouldFail = fail;
@@ -128,32 +111,10 @@ export async function installWidgetBridge(
       let pollCount = 0;
       let connectCount = 0;
       let listenerCount = 0;
-      let context = hostContext;
-      let contextListener: ((value: McpUiHostContext) => void) | undefined;
-      const displayRequests: string[] = [];
       const requestedPlanIds: string[] = [];
-      let resolveDisplay: (() => void) | undefined;
-      (
-        window as unknown as { __todojoResolveDisplay: () => void }
-      ).__todojoResolveDisplay = () => {
-        resolveDisplay?.();
-        resolveDisplay = undefined;
-      };
       (
         window as unknown as { __todojoRequestedPlanIds: () => string[] }
       ).__todojoRequestedPlanIds = () => requestedPlanIds;
-      const responses = [...displayResponses];
-      (
-        window as unknown as { __todojoDisplayRequests: () => string[] }
-      ).__todojoDisplayRequests = () => displayRequests;
-      (
-        window as unknown as {
-          __todojoSetHostContext: (value: McpUiHostContext) => void;
-        }
-      ).__todojoSetHostContext = (value) => {
-        context = { ...context, ...value };
-        contextListener?.(context);
-      };
       (
         window as unknown as {
           __todojoSetPlan?: (plan: unknown, notify?: boolean) => void;
@@ -189,28 +150,6 @@ export async function installWidgetBridge(
       (
         window as unknown as { __TODOJO_TEST_BRIDGE__: unknown }
       ).__TODOJO_TEST_BRIDGE__ = {
-        getHostContext: () => context,
-        onHostContext: (next: (value: McpUiHostContext) => void) => {
-          contextListener = next;
-          return () => {
-            contextListener = undefined;
-          };
-        },
-        requestDisplayMode: async (mode: McpUiDisplayMode) => {
-          displayRequests.push(mode);
-          if (manualDisplay)
-            await new Promise<void>((resolve) => {
-              resolveDisplay = resolve;
-            });
-          if (displayLatencyMs)
-            await new Promise((resolve) =>
-              setTimeout(resolve, displayLatencyMs),
-            );
-          const granted = responses.shift() ?? mode;
-          if (granted === "error") throw new Error("host rejected request");
-          context = { ...context, displayMode: granted };
-          return granted;
-        },
         connect: async () => {
           connectCount += 1;
           if (remainingConnectFailures > 0) {
@@ -244,10 +183,6 @@ export async function installWidgetBridge(
       fail: options.fail ?? false,
       latencyMs: options.latencyMs ?? 0,
       connectFailures: options.connectFailures ?? 0,
-      hostContext: options.hostContext,
-      displayResponses: options.displayResponses ?? [],
-      displayLatencyMs: options.displayLatencyMs ?? 0,
-      manualDisplay: options.manualDisplay ?? false,
     },
   );
 }

@@ -63,20 +63,6 @@ button {
   padding: 4px 7px;
   white-space: nowrap;
 }
-.todojo__placement:disabled {
-  cursor: default;
-  color: #a6a39d;
-  border-color: #3a3936;
-}
-.todojo__display-status {
-  color: #c9c6bf;
-  font-size: 12px;
-  margin-bottom: 6px;
-  overflow-wrap: anywhere;
-}
-.todojo__display-status:empty {
-  display: none;
-}
 .todojo__status {
   color: #d6d1c8;
   font-size: 12px;

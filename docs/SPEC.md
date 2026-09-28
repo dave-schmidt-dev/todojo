@@ -442,14 +442,8 @@ Input:
 create_task_plan and render_todojo share the ToDoJo UI resource. Other mutation
 tools return structured data and do not mount another widget.
 
-Keep visible requests the MCP Apps host pip mode on a user click when
-availableDisplayModes includes pip. App initialization and OpenAI resource
-metadata declare inline and pip support. Full/Compact is independent of host
-placement. Show pending feedback and the actual granted mode, including
-fullscreen fallback, inline denial, and errors. Host context changes update
-the control; Return to chat requests inline when supported. A completed plan
-requests inline once if it is outside chat, with completion still visible on
-denial or error. Polling remains bound to the same plan throughout.
+The widget is presented inline. Full/Compact changes the widget layout.
+Polling remains bound to the same plan throughout.
 
 UI resource URI should be versioned, e.g.:
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "todojo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Live numbered task tracking for substantial ChatGPT and Codex work.",
   "repository": "https://github.com/dave-schmidt-dev/todojo",
   "license": "MIT",

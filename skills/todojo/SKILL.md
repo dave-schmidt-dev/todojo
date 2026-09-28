@@ -11,5 +11,5 @@ Use ToDoJo for substantial multi-step work, or when the user explicitly asks for
 4. Mark blocked only for a genuine external dependency, user action, unavailable credential, device, or service. Keep ordinary test, compiler, and runtime failures active while fixing them.
 5. Preserve display IDs. For a full reorder, send every task ID in the desired order. For a partial reorder, send only queued task IDs; their existing queued slots are reordered.
 6. Keep titles concise and action-oriented. Add or reorder work only when the actual plan changes.
-7. For resume or recovery, render exactly one `render_todojo` widget for the requested explicit `plan_id`. Creation already renders. Do not render again after each transition. The user can choose Keep visible if the host supports it; only actual host mode confirms placement.
+7. For resume or recovery, render exactly one `render_todojo` widget for the requested explicit `plan_id`. Creation already renders. Do not render again after each transition.
 8. Keep the plan synchronized with real work and provide visible progress while work is ongoing. Snapshots and tool results are authoritative; do not invent UI state.

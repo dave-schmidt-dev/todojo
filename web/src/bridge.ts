@@ -1,7 +1,5 @@
 import {
   App,
-  type McpUiDisplayMode,
-  type McpUiHostContext,
   type McpUiToolResultNotification,
 } from "@modelcontextprotocol/ext-apps";
 
@@ -31,15 +29,11 @@ export interface TodojoPlan {
 }
 
 export type ToolResultListener = (result: unknown) => void;
-export type HostContextListener = (context: McpUiHostContext) => void;
 
 export interface TodojoBridge {
   connect(): Promise<void>;
   getPlan(planId: string): Promise<TodojoPlan>;
   onToolResult(listener: ToolResultListener): () => void;
-  getHostContext?(): McpUiHostContext | undefined;
-  onHostContext?(listener: HostContextListener): () => void;
-  requestDisplayMode?(mode: McpUiDisplayMode): Promise<McpUiDisplayMode>;
 }
 
 const taskStatuses = new Set<TaskStatus>([
@@ -109,12 +103,10 @@ function planFromResult(result: unknown): TodojoPlan | undefined {
 /** Pinned MCP Apps v2 adapter. It deliberately receives the initial result before polling. */
 export class McpAppsBridge implements TodojoBridge {
   private readonly app = new App(
-    { name: "ToDoJo", version: "0.2.0" },
-    { availableDisplayModes: ["inline", "pip"] },
+    { name: "ToDoJo", version: "0.2.1" },
+    { availableDisplayModes: ["inline"] },
   );
   private readonly listeners = new Set<ToolResultListener>();
-  private readonly contextListeners = new Set<HostContextListener>();
-  private context: McpUiHostContext | undefined;
 
   constructor() {
     this.app.addEventListener(
@@ -123,31 +115,10 @@ export class McpAppsBridge implements TodojoBridge {
         for (const listener of this.listeners) listener(result);
       },
     );
-    this.app.addEventListener("hostcontextchanged", (context) => {
-      this.context = { ...this.context, ...context };
-      for (const listener of this.contextListeners) listener(this.context);
-    });
   }
 
   async connect(): Promise<void> {
     await this.app.connect();
-    this.context = { ...this.app.getHostContext(), ...this.context };
-    if (this.context)
-      for (const listener of this.contextListeners) listener(this.context);
-  }
-
-  getHostContext(): McpUiHostContext | undefined {
-    return this.context;
-  }
-
-  onHostContext(listener: HostContextListener): () => void {
-    this.contextListeners.add(listener);
-    return () => this.contextListeners.delete(listener);
-  }
-
-  async requestDisplayMode(mode: McpUiDisplayMode): Promise<McpUiDisplayMode> {
-    const result = await this.app.requestDisplayMode({ mode });
-    return result.mode;
   }
 
   async getPlan(planId: string): Promise<TodojoPlan> {

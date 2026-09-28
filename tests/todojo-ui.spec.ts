@@ -341,3 +341,18 @@ test("equal-version polling keeps keyboard focus and the open drawer", async ({
   await expect(close).toBeFocused();
   await expect(page.getByLabel("Task details")).toBeVisible();
 });
+test("active and completed widgets omit placement controls while retaining Full and Compact", async ({
+  page,
+}) => {
+  for (const state of ["active", "completed"] as const) {
+    await mount(page, state);
+    await expect(page.locator("[data-placement]")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /Keep visible|Return to chat/ }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Compact" }).click();
+    await expect(page.locator("[data-view=compact]")).toBeVisible();
+    await page.getByRole("button", { name: "Full" }).click();
+    await expect(page.locator("[data-view=full]")).toBeVisible();
+  }
+});

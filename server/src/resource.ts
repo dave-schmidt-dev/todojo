@@ -28,7 +28,7 @@ export function registerTodojoResource(server: McpServer): void {
           text: todojoHtml,
           _meta: {
             ui: { prefersBorder: true },
-            "openai/ui": { availableDisplayModes: ["inline", "pip"] },
+            "openai/ui": { availableDisplayModes: ["inline"] },
           },
         },
       ],

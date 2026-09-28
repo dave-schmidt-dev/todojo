@@ -6,6 +6,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-28
+
+### Removed
+
+- The unsupported Keep visible control and its host placement plumbing.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added

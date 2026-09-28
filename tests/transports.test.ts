@@ -144,7 +144,7 @@ test("creation and recovery mount the same resource; transitions never remount",
     const resource = await client.readResource({ uri: TODOJO_RESOURCE_URI });
     assert.match((resource.contents[0] as { text: string }).text, /<main/);
     assert.deepEqual(resource.contents[0]._meta?.["openai/ui"], {
-      availableDisplayModes: ["inline", "pip"],
+      availableDisplayModes: ["inline"],
     });
   } finally {
     await client.close();
