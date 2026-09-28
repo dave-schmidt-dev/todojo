@@ -4,7 +4,7 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/server";
 
-export const TODOJO_RESOURCE_URI = "ui://todojo/v0.1/todojo.html";
+export const TODOJO_RESOURCE_URI = "ui://todojo/v0.2/todojo.html";
 
 declare const __TODOJO_BUNDLE__: string;
 const todojoBundle =
@@ -16,13 +16,20 @@ export function registerTodojoResource(server: McpServer): void {
     server,
     "ToDoJo",
     TODOJO_RESOURCE_URI,
-    { description: "ToDoJo task-plan widget" },
+    {
+      description: "ToDoJo task-plan widget",
+      _meta: { ui: { prefersBorder: true } },
+    },
     () => ({
       contents: [
         {
           uri: TODOJO_RESOURCE_URI,
           mimeType: RESOURCE_MIME_TYPE,
           text: todojoHtml,
+          _meta: {
+            ui: { prefersBorder: true },
+            "openai/ui": { availableDisplayModes: ["inline", "pip"] },
+          },
         },
       ],
     }),

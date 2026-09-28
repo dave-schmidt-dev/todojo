@@ -11,7 +11,7 @@ import { TODOJO_RESOURCE_URI } from "../server/src/resource.ts";
 const directory = mkdtempSync(join(tmpdir(), "todojo-transport-"));
 after(() => rmSync(directory, { recursive: true, force: true }));
 
-test("only render_todojo mounts the UI resource and requested plan remains bound", async () => {
+test("creation and recovery mount the same resource; transitions never remount", async () => {
   const { server, repository } = createTodojoServer({
     store: { dbPath: join(directory, "data.sqlite") },
   });
@@ -78,8 +78,24 @@ test("only render_todojo mounts the UI resource and requested plan remains bound
           (tool._meta as { ui?: { resourceUri?: string } } | undefined)?.ui
             ?.resourceUri,
       ).length,
-      1,
+      2,
     );
+    assert.equal(
+      (
+        byName.get("create_task_plan")?._meta as
+          | { ui?: { resourceUri?: string } }
+          | undefined
+      )?.ui?.resourceUri,
+      TODOJO_RESOURCE_URI,
+    );
+    for (const tool of tools.tools) {
+      if (tool.name === "create_task_plan" || tool.name === "render_todojo")
+        continue;
+      assert.equal(
+        (tool._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri,
+        undefined,
+      );
+    }
     const one = await client.callTool({
       name: "create_task_plan",
       arguments: { tasks: [{ title: "one" }] },
@@ -102,8 +118,34 @@ test("only render_todojo mounts the UI resource and requested plan remains bound
       (output.structuredContent as { plan_id: string }).plan_id,
       first,
     );
+    assert.deepEqual(
+      output.structuredContent?.tasks,
+      repository.getPlan(second).tasks,
+    );
+    assert.equal(
+      output.structuredContent?.version,
+      repository.getPlan(second).version,
+    );
+    assert.equal(repository.getPlan(first).tasks[0].status, "active");
+    assert.equal(repository.getPlan(second).tasks[0].status, "active");
+    const transitioned = await client.callTool({
+      name: "complete_task",
+      arguments: { plan_id: first, task_id: "T1" },
+    });
+    assert.equal(
+      (transitioned.structuredContent as { status: string }).status,
+      "completed",
+    );
+    assert.equal(
+      (transitioned._meta as { ui?: { resourceUri?: string } })?.ui
+        ?.resourceUri,
+      undefined,
+    );
     const resource = await client.readResource({ uri: TODOJO_RESOURCE_URI });
     assert.match((resource.contents[0] as { text: string }).text, /<main/);
+    assert.deepEqual(resource.contents[0]._meta?.["openai/ui"], {
+      availableDisplayModes: ["inline", "pip"],
+    });
   } finally {
     await client.close();
     repository.close();

@@ -11,6 +11,9 @@ test("instructions encode activation, blocked resume, reordering, and one-render
     "full reorder",
     "queued-subset reorder",
     "Render at most one",
+    "call create_task_plan once",
+    "starts the first task by default",
+    "do not call render_todojo again after creation",
     "ChatGPT does not load a Codex skill",
   ]) {
     assert.match(TODOJO_INSTRUCTIONS, new RegExp(phrase));

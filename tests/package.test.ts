@@ -119,13 +119,17 @@ function registeredBuildFixture(
   const project = mkdtempSync(join(tmpdir(), "todojo-registered-build-"));
   for (const path of [
     "plugin.json",
+    "package.json",
+    "package-lock.json",
     "mcp.json",
     "scripts/build.mjs",
     "scripts/verify-package.mjs",
     "scripts/tunnel-app.mjs",
     "bin/todojo-tunnel-child",
     "server/src",
+    "server/package.json",
     "web/src",
+    "web/package.json",
     "skills",
     "assets",
     ".agents/plugins",
@@ -235,6 +239,35 @@ test("registered app build rejects placeholder and unreferenced source bindings"
     } finally {
       rmSync(project, { recursive: true, force: true });
     }
+  }
+});
+
+test("manifest-only package verification rejects a derived version mismatch", () => {
+  const project = registeredBuildFixture("asdk_app_fixture123");
+  try {
+    const rootManifest = JSON.parse(
+      readFileSync(join(project, "package.json"), "utf8"),
+    );
+    const rootVersion = rootManifest.version as string;
+    const serverManifestPath = join(project, "server/package.json");
+    const serverManifest = JSON.parse(readFileSync(serverManifestPath, "utf8"));
+    serverManifest.version = `${rootVersion}-mismatch`;
+    writeFileSync(serverManifestPath, `${JSON.stringify(serverManifest)}\n`);
+
+    const verify = spawnSync(
+      process.execPath,
+      ["scripts/verify-package.mjs", "--manifest-only"],
+      { cwd: project, encoding: "utf8" },
+    );
+    assert.notEqual(verify.status, 0, "derived version mismatch passed");
+    assert.match(
+      verify.stderr ?? "",
+      new RegExp(
+        `server/package\\.json version must equal package\\.json \\(${rootVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)`,
+      ),
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
   }
 });
 

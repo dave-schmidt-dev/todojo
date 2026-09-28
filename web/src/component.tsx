@@ -5,6 +5,7 @@ import {
   type TodojoPlan,
   type TodojoTask,
 } from "./bridge.js";
+import { DisplayModeControl } from "./display-mode.js";
 import {
   lastCompletedTask,
   orderedTasks,
@@ -46,13 +47,17 @@ export class TodojoWidget {
   private snapshotMs = 0;
   private workBaselineMs = 0;
   private readonly taskBaselines = new Map<string, number>();
+  private readonly display: DisplayModeControl;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly bridge: TodojoBridge,
-  ) {}
+  ) {
+    this.display = new DisplayModeControl(bridge, () => this.render());
+  }
 
   async start(): Promise<void> {
+    this.display.start();
     this.unlisten = this.bridge.onToolResult((result) =>
       this.receive(
         asPlan((result as { structuredContent?: unknown })?.structuredContent),
@@ -71,6 +76,7 @@ export class TodojoWidget {
     if (this.connectTimer) window.clearTimeout(this.connectTimer);
     if (this.tickTimer) window.clearInterval(this.tickTimer);
     this.unlisten?.();
+    this.display.destroy();
     window.removeEventListener("online", this.wake);
     document.removeEventListener("visibilitychange", this.wake);
   }
@@ -145,6 +151,7 @@ export class TodojoWidget {
     }
     const priorPhase = this.phase;
     this.plan = candidate;
+    this.display.updatePlan(candidate.status === "completed");
     if (this.connectTimer) {
       window.clearTimeout(this.connectTimer);
       this.connectTimer = undefined;
@@ -324,7 +331,8 @@ export class TodojoWidget {
       : this.mode === "full"
         ? this.fullGrid(plan)
         : this.compactGrid(plan);
-    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span><button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header><div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${content}${this.drawerHtml(plan)}</section>`;
+    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span>${this.display.buttonHtml()}<button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header><div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${this.display.statusHtml()}${content}${this.drawerHtml(plan)}</section>`;
+    this.display.bind(this.root);
     this.root.querySelector("[data-mode]")?.addEventListener("click", () => {
       this.mode = this.mode === "full" ? "compact" : "full";
       this.drawer = undefined;

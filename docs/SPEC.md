@@ -289,6 +289,7 @@ Implement clear, narrow tools.
 Input:
 {
   title?: string,
+  start_first?: boolean, // defaults to true
   tasks: [
     {
       title: string,
@@ -300,8 +301,8 @@ Input:
 Behavior:
 - create plan
 - allocate T1...
-- optionally start T1 only if explicitly requested
-- return authoritative snapshot
+- start T1 within the create transaction by default; explicit start_first=false keeps tasks queued
+- return the authoritative snapshot and mount one widget from this result
 
 
 ## get_task_plan
@@ -427,7 +428,9 @@ NEVER alter display IDs.
 
 Use MCP Apps UI.
 
-Only one dedicated render tool should mount the widget:
+New work calls create_task_plan once to create, start T1, and mount the widget.
+Do not call render_todojo after creation. For resume or recovery, use the
+read-only dedicated render tool with an explicit plan ID:
 
 render_todojo
 
@@ -436,10 +439,17 @@ Input:
   plan_id: string
 }
 
-This is the only tool associated with the ToDoJo UI resource.
+create_task_plan and render_todojo share the ToDoJo UI resource. Other mutation
+tools return structured data and do not mount another widget.
 
-Mutation tools should return structured data but should NOT each mount another
-ToDoJo widget.
+Keep visible requests the MCP Apps host pip mode on a user click when
+availableDisplayModes includes pip. App initialization and OpenAI resource
+metadata declare inline and pip support. Full/Compact is independent of host
+placement. Show pending feedback and the actual granted mode, including
+fullscreen fallback, inline denial, and errors. Host context changes update
+the control; Return to chat requests inline when supported. A completed plan
+requests inline once if it is outside chat, with completion still visible on
+denial or error. Polling remains bound to the same plan throughout.
 
 UI resource URI should be versioned, e.g.:
 
@@ -684,7 +694,8 @@ When a ToDoJo plan is active:
 8. Preserve task IDs.
 9. Keep task titles concise and action-oriented.
 10. Never invent UI metadata.
-11. Render ToDoJo once after establishing the plan.
+11. Create and render new work in one create_task_plan call; render_todojo once
+    with an explicit plan ID only for resume or recovery.
 12. Do not render a new widget after every task transition.
 13. For trivial one-step questions, do not create a ToDoJo plan unless the
     user explicitly asks for one.

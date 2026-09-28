@@ -62,19 +62,20 @@ function snapshot(plan: unknown) {
   };
 }
 
-/** Registers model-oriented task mutations and the single widget-rendering tool. */
+/** Registers one-call creation, task mutations, and explicit recovery rendering. */
 export function registerTodojoTools(
   server: McpServer,
   repository: TaskPlanRepository,
   options: ToolRegistrationOptions = {},
 ): void {
   const status = options.onStatus;
-  server.registerTool(
+  registerAppTool(
+    server,
     "create_task_plan",
     {
       title: "Create ToDoJo task plan",
       description:
-        "Use for substantial multi-step work. Do not create a plan for a small one-step task.",
+        "Create, start the first task, and render one widget for substantial multi-step work in one call. Omit start_first for normal work; false creates a queued plan. Do not call render_todojo again after creation. Do not create a plan for a small one-step task.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(160).optional(),
         tasks: z
@@ -86,10 +87,12 @@ export function registerTodojoTools(
           )
           .min(1)
           .max(100),
-        start_first: z.boolean().optional(),
+        start_first: z.boolean().default(true),
       }),
       outputSchema: taskPlanSchema,
-      ...modelOnly,
+      _meta: {
+        ui: { resourceUri: TODOJO_RESOURCE_URI, visibility: ["model"] },
+      },
     },
     (input) => snapshot(repository.createPlan(input, status)),
   );
@@ -258,7 +261,7 @@ export function registerTodojoTools(
     {
       title: "Render ToDoJo",
       description:
-        "Render exactly one ToDoJo widget for the requested explicit plan ID. Never choose a plan from a multi-plan list.",
+        "For resume or recovery, render exactly one ToDoJo widget for the requested explicit plan ID. Creation already renders; never render again after creation or each transition. Never choose a plan from a multi-plan list.",
       inputSchema: z.object({ plan_id: planId }),
       outputSchema: taskPlanSchema,
       annotations: { readOnlyHint: true },

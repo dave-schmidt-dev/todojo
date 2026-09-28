@@ -1,6 +1,6 @@
 {
   "name": "todojo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.19.1",
@@ -17,7 +17,7 @@
     "lint": "biome ci .",
     "dead-code": "knip",
     "quality": "npm run typecheck && npm run lint && npm run dead-code",
-    "test": "tsx --test tests/stack-probe.ts tests/*.test.ts && playwright test --pass-with-no-tests",
+    "test": "tsx --test --test-concurrency=1 tests/stack-probe.ts tests/*.test.ts && playwright test --pass-with-no-tests",
     "test:stack": "tsx --test tests/stack-probe.ts",
     "test:core": "node scripts/run-tests.mjs core",
     "test:server": "node scripts/run-tests.mjs server",

@@ -26,7 +26,6 @@ test("built UI renders and updates from the real stdio MCP and persisted SQLite 
       arguments: {
         title: "Persisted original",
         tasks: [{ title: "Stored task" }, { title: "Next stored task" }],
-        start_first: true,
       },
     });
     const planId = (created.structuredContent as { plan_id: string }).plan_id;
@@ -43,10 +42,19 @@ test("built UI renders and updates from the real stdio MCP and persisted SQLite 
       name: "render_todojo",
       arguments: { plan_id: planId },
     });
-    const initial = rendered.structuredContent as { plan_id: string };
+    expect((rendered.structuredContent as { plan_id: string }).plan_id).toBe(
+      planId,
+    );
+    for (const field of ["tasks", "version", "current_task_id", "status"]) {
+      expect(rendered.structuredContent?.[field]).toEqual(
+        created.structuredContent?.[field],
+      );
+    }
+    // The create result alone supplies the first mounted snapshot.
+    const initial = created.structuredContent as { plan_id: string };
     expect(initial.plan_id).toBe(planId);
     const resource = await client.readResource({
-      uri: "ui://todojo/v0.1/todojo.html",
+      uri: "ui://todojo/v0.2/todojo.html",
     });
     const html = (resource.contents[0] as { text: string }).text;
     expect(html).toContain("<script>");

@@ -47,6 +47,34 @@ function readJson(path) {
   }
 }
 
+function sourceVersion() {
+  const sourcePackage = readJson(join(root, "package.json"));
+  if (
+    sourcePackage.name !== "todojo" ||
+    typeof sourcePackage.version !== "string"
+  )
+    fail("package.json must provide the authoritative todojo version");
+  return sourcePackage.version;
+}
+
+function validateVersionedManifest(path, name, version, label) {
+  const manifest = readJson(path);
+  if (manifest.name !== name || manifest.version !== version)
+    fail(`${label} version must equal package.json (${version})`);
+}
+
+function validateLockfile(version) {
+  const lockfile = readJson(join(root, "package-lock.json"));
+  if (
+    lockfile.name !== "todojo" ||
+    lockfile.version !== version ||
+    lockfile.packages?.[""]?.version !== version ||
+    lockfile.packages?.server?.version !== version ||
+    lockfile.packages?.web?.version !== version
+  )
+    fail(`package-lock.json versions must equal package.json (${version})`);
+}
+
 function equalKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     fail(`${label} must be an object`);
@@ -56,7 +84,7 @@ function equalKeys(value, expected, label) {
     fail(`${label} must contain exactly: ${wanted.join(", ")}`);
 }
 
-function validatePlugin(plugin, label) {
+function validatePlugin(plugin, label, version) {
   const allowed = [
     "$schema",
     "name",
@@ -75,11 +103,13 @@ function validatePlugin(plugin, label) {
     fail(`${label} must use the Agent Plugins 1.0.0 schema`);
   if (plugin.name !== "todojo") fail(`${label} name must be todojo`);
   if (
-    plugin.version !== "0.1.0" ||
+    plugin.version !== version ||
     typeof plugin.description !== "string" ||
     !plugin.description
   )
-    fail(`${label} must provide version and description`);
+    fail(
+      `${label} version must equal package.json (${version}) and provide description`,
+    );
   const openai = plugin.extensions?.["com.openai"];
   if (!openai || typeof openai !== "object" || Array.isArray(openai))
     fail(`${label} must contain extensions.com.openai`);
@@ -161,9 +191,23 @@ function installedFilesRelativeTo(directory) {
 }
 
 function verifySource() {
+  const version = sourceVersion();
   const plugin = readJson(join(root, "plugin.json"));
   const mcp = readJson(join(root, "mcp.json"));
-  validatePlugin(plugin, "plugin.json");
+  validatePlugin(plugin, "plugin.json", version);
+  validateVersionedManifest(
+    join(root, "server/package.json"),
+    "todojo-server",
+    version,
+    "server/package.json",
+  );
+  validateVersionedManifest(
+    join(root, "web/package.json"),
+    "todojo-widget",
+    version,
+    "web/package.json",
+  );
+  validateLockfile(version);
   validateMcp(mcp, "mcp.json");
   if (existsSync(join(root, ".app.json"))) {
     verifyRegisteredApp(root, root, "source app binding is invalid");
@@ -201,7 +245,7 @@ function verifyArtifact() {
     fail("dist/todojo is missing; run npm run build first");
   const packagePlugin = readJson(join(packageRoot, "plugin.json"));
   const packageMcp = readJson(join(packageRoot, "mcp.json"));
-  validatePlugin(packagePlugin, "dist/todojo/plugin.json");
+  validatePlugin(packagePlugin, "dist/todojo/plugin.json", sourceVersion());
   validateMcp(packageMcp, "dist/todojo/mcp.json", true);
   if (existsSync(join(root, ".app.json"))) {
     verifyRegisteredApp(root, packageRoot, "packaged app binding is invalid");

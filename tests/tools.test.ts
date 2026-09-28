@@ -30,14 +30,22 @@ test("packet tools return authoritative structured snapshots and enforce transit
       arguments: {
         title: "Plan",
         tasks: [{ title: "one" }, { title: "two" }],
-        start_first: true,
       },
     });
     const plan = created.structuredContent as {
       plan_id: string;
+      current_task_id: string;
+      version: number;
       tasks: { id: string; status: string; display_id: string }[];
     };
     assert.equal(plan.tasks[0].status, "active");
+    assert.equal(plan.tasks[1].status, "queued");
+    assert.equal(plan.current_task_id, plan.tasks[0].id);
+    assert.equal(
+      plan.version,
+      1,
+      "creation and activation are one transaction",
+    );
     const advertised = await client.listTools();
     assert.equal(
       advertised.tools.filter((tool) => tool.outputSchema !== undefined).length,
@@ -143,9 +151,20 @@ test("reorder tool preserves full and queued-subset behavior", async () => {
       name: "create_task_plan",
       arguments: {
         tasks: [{ title: "one" }, { title: "two" }, { title: "three" }],
+        start_first: false,
       },
     });
     const plan = created.structuredContent as { plan_id: string };
+    assert.ok(
+      (
+        created.structuredContent as {
+          tasks: { status: string; intervals: unknown[] }[];
+        }
+      ).tasks.every(
+        (task) => task.status === "queued" && task.intervals.length === 0,
+      ),
+    );
+    assert.equal(created.structuredContent?.current_task_id, undefined);
     const subset = await client.callTool({
       name: "reorder_tasks",
       arguments: { plan_id: plan.plan_id, ordered_task_ids: ["T3", "T1"] },

@@ -14,7 +14,9 @@ test("plugin skill binds plans and covers ToDoJo transition rules", () => {
     "full reorder",
     "partial reorder",
     "genuine external dependency",
-    "Render exactly one",
+    "render exactly one",
+    "call `create_task_plan` once",
+    "do not call `render_todojo` again",
     "visible progress",
   ]) {
     assert.match(
