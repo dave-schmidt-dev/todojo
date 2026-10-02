@@ -61,7 +61,7 @@ test("creation and recovery mount the same resource; transitions never remount",
       ["complete_task", "Resume blocked work"],
       ["advance_task", "blocked work must be resumed"],
       ["reorder_tasks", "queued subsets"],
-      ["render_todojo", "exactly one"],
+      ["render_todojo", "LAST tool call"],
     ]) {
       assert.match(byName.get(name)?.description ?? "", new RegExp(phrase));
     }
@@ -144,7 +144,7 @@ test("creation and recovery mount the same resource; transitions never remount",
     const resource = await client.readResource({ uri: TODOJO_RESOURCE_URI });
     assert.match((resource.contents[0] as { text: string }).text, /<main/);
     assert.deepEqual(resource.contents[0]._meta?.["openai/ui"], {
-      availableDisplayModes: ["inline"],
+      availableDisplayModes: ["inline", "pip"],
     });
   } finally {
     await client.close();
@@ -181,6 +181,72 @@ test("MCP host receives pending and result status before the tool response", asy
     assert.ok(
       timeline.findIndex((entry) => entry.includes("pending")) <
         timeline.indexOf("response"),
+    );
+  } finally {
+    await client.close();
+    repository.close();
+    await server.close();
+  }
+});
+
+test("repeated read-only render returns the latest state without changing persisted identity", async () => {
+  const { server, repository } = createTodojoServer({
+    store: { dbPath: join(directory, "rerender.sqlite") },
+  });
+  const [serverTransport, clientTransport] =
+    InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: "todojo-rerender-test", version: "0.1.0" });
+  await client.connect(clientTransport);
+  try {
+    const created = await client.callTool({
+      name: "create_task_plan",
+      arguments: { tasks: [{ title: "one" }, { title: "two" }] },
+    });
+    const planId = (created.structuredContent as { plan_id: string }).plan_id;
+    const before = repository.getPlan(planId);
+    await client.callTool({
+      name: "advance_task",
+      arguments: {
+        plan_id: planId,
+        complete_task_id: "T1",
+        start_task_id: "T2",
+      },
+    });
+    const mutated = repository.getPlan(planId);
+    assert.equal(mutated.version, before.version + 1);
+    assert.equal(mutated.tasks[0].status, "completed");
+    assert.equal(mutated.tasks[1].status, "active");
+    for (const render of [1, 2]) {
+      const output = await client.callTool({
+        name: "render_todojo",
+        arguments: { plan_id: planId },
+      });
+      const snapshot = output.structuredContent as {
+        plan_id: string;
+        version: number;
+        status: string;
+        tasks: { id: string; status: string }[];
+      };
+      assert.equal(snapshot.plan_id, planId, `render ${render} kept the plan`);
+      assert.equal(
+        snapshot.version,
+        mutated.version,
+        `render ${render} returned the latest version`,
+      );
+      assert.equal(snapshot.status, mutated.status);
+      assert.deepEqual(
+        snapshot.tasks.map((task) => [task.id, task.status]),
+        mutated.tasks.map((task) => [task.id, task.status]),
+        `render ${render} returned the latest task IDs and statuses`,
+      );
+    }
+    const after = repository.getPlan(planId);
+    assert.equal(after.version, mutated.version);
+    assert.equal(after.status, mutated.status);
+    assert.deepEqual(
+      after.tasks.map((task) => task.id),
+      mutated.tasks.map((task) => task.id),
     );
   } finally {
     await client.close();

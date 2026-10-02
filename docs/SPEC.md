@@ -2,6 +2,8 @@
 
 # TODOJO v0.1 BUILD + TEST PACKET
 
+> **Suspension notice — 2026-10-02:** This project is a dead end and development is suspended. The local plugin is uninstalled because the core requirement of an always-visible surface inside Codex is unmet. This notice overrides the delivery goals and acceptance criteria below. Resume only after actual host PiP or an equivalent persistent in-host surface is available and passes live verification; separate companion windows and Electron workarounds are rejected. The real host PiP request was returned inline (rejected), so advertised inline capability alone is insufficient and does not imply support in another untested host. The original specification is preserved below for historical reference.
+
 ## Product
 
 Name: ToDoJo
@@ -429,8 +431,12 @@ NEVER alter display IDs.
 Use MCP Apps UI.
 
 New work calls create_task_plan once to create, start T1, and mount the widget.
-Do not call render_todojo after creation. For resume or recovery, use the
-read-only dedicated render tool with an explicit plan ID:
+Creation already renders, so the model skips an immediate duplicate render and
+reuses the explicit plan ID for every later call. For a tracked plan, the model
+calls the read-only dedicated render tool with an explicit plan ID as the LAST
+tool call before each user-facing turn-ending response, including a blocked
+handoff and completion, so the latest snapshot appears near the bottom of the
+conversation:
 
 render_todojo
 
@@ -440,10 +446,22 @@ Input:
 }
 
 create_task_plan and render_todojo share the ToDoJo UI resource. Other mutation
-tools return structured data and do not mount another widget.
+tools return structured data and do not mount another widget. The model does
+not re-render after every transition, poll, or commentary.
 
-The widget is presented inline. Full/Compact changes the widget layout.
-Polling remains bound to the same plan throughout.
+The widget is presented inline. A new inline render appends a fresh view of
+the same plan; it cannot move or delete earlier cards or pin the host
+conversation, so permanent bottom placement is not guaranteed. Full/Compact
+changes the widget layout. Polling remains bound to the same plan throughout.
+
+Experimental PiP diagnostics make one automatic PiP attempt per connected
+server session even when the host does not advertise it. A session claim prevents
+new widgets from repeating the request. Claim errors are shown while manual retry
+remains available. The widget reports the actual mode or error; Try PiP makes an
+explicit retry and Return inline exits PiP. Only
+the timestamp, advertised modes, actual mode, and categorical outcome are
+written privately to `.data/pip-probe.json`. The real host request was returned
+inline (rejected); only advertised inline capability is available.
 
 UI resource URI should be versioned, e.g.:
 
@@ -688,9 +706,15 @@ When a ToDoJo plan is active:
 8. Preserve task IDs.
 9. Keep task titles concise and action-oriented.
 10. Never invent UI metadata.
-11. Create and render new work in one create_task_plan call; render_todojo once
-    with an explicit plan ID only for resume or recovery.
-12. Do not render a new widget after every task transition.
+11. Create and render new work in one create_task_plan call; creation already
+    renders, so skip an immediate duplicate render and reuse the explicit plan
+    ID for every later call.
+12. Call read-only render_todojo once with that explicit plan ID as the LAST
+    tool call before each user-facing turn-ending response, including a
+    blocked handoff and completion, so the latest snapshot appears near the
+    bottom of the conversation. Do not re-render after every transition, poll,
+    or commentary; a new inline render appends a fresh view of the same plan
+    and cannot move or delete earlier cards or pin the host conversation.
 13. For trivial one-step questions, do not create a ToDoJo plan unless the
     user explicitly asks for one.
 

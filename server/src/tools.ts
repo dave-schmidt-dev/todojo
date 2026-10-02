@@ -75,7 +75,7 @@ export function registerTodojoTools(
     {
       title: "Create ToDoJo task plan",
       description:
-        "Create, start the first task, and render one widget for substantial multi-step work in one call. Omit start_first for normal work; false creates a queued plan. Do not call render_todojo again after creation. Do not create a plan for a small one-step task.",
+        "Create, start the first task, and render one widget for substantial multi-step work in one call. Omit start_first for normal work; false creates a queued plan. Reuse the returned plan ID for every later call. Creation already renders, so do not render again immediately after creation; render_todojo is again appropriate only as the last call before a turn-ending response. Do not create a plan for a small one-step task.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(160).optional(),
         tasks: z
@@ -261,7 +261,7 @@ export function registerTodojoTools(
     {
       title: "Render ToDoJo",
       description:
-        "For resume or recovery, render exactly one ToDoJo widget for the requested explicit plan ID. Creation already renders; never render again after creation or each transition. Never choose a plan from a multi-plan list.",
+        "Read-only refresh for a tracked plan: call once with the requested explicit plan ID as the LAST tool call before each user-facing turn-ending response, including a blocked handoff and completion, so the latest snapshot appears near the bottom of the conversation. Creation already renders, so skip an immediate duplicate render and do not re-render after every transition, poll, or commentary. A new inline render appends a fresh view of the same plan; it cannot move or delete earlier cards or pin the host conversation, so do not claim guaranteed permanent bottom placement or host support. Never choose a plan from a multi-plan list.",
       inputSchema: z.object({ plan_id: planId }),
       outputSchema: taskPlanSchema,
       annotations: { readOnlyHint: true },

@@ -14,9 +14,12 @@ test("plugin skill binds plans and covers ToDoJo transition rules", () => {
     "full reorder",
     "partial reorder",
     "genuine external dependency",
-    "render exactly one",
     "call `create_task_plan` once",
-    "do not call `render_todojo` again",
+    "do not call `render_todojo` again immediately after creation",
+    "LAST tool call before each user-facing turn-ending response",
+    "including a blocked handoff and completion",
+    "appends a fresh view of the same plan",
+    "cannot move or delete earlier cards",
     "visible progress",
   ]) {
     assert.match(
@@ -24,7 +27,23 @@ test("plugin skill binds plans and covers ToDoJo transition rules", () => {
       new RegExp(phrase.replaceAll(/[.*+?^${}()|[\\]\\]/g, "\\$&")),
     );
   }
-  assert.match(skill, /Do not render again after each transition\./);
+});
+
+test("skill requires a same-plan end-of-turn refresh and prohibits stale never-render bans", () => {
+  assert.match(
+    skill,
+    /call read-only `render_todojo` once with that explicit `plan_id`/,
+  );
+  assert.match(
+    skill,
+    /Do not re-render after every transition, poll, or commentary\./,
+  );
+  assert.doesNotMatch(
+    skill,
+    /do not call `render_todojo` again after creation/,
+  );
+  assert.doesNotMatch(skill, /Do not render again after each transition\./);
+  assert.doesNotMatch(skill, /render exactly one/);
 });
 
 test("server instructions retain the skill's enforceable workflow constraints", () => {
@@ -33,7 +52,8 @@ test("server instructions retain the skill's enforceable workflow constraints", 
     "start_task to resume",
     "full reorder",
     "queued-subset reorder",
-    "Render at most one",
+    "LAST tool call before each user-facing turn-ending response",
+    "including a blocked handoff and completion",
   ]) {
     assert.match(TODOJO_INSTRUCTIONS, new RegExp(phrase));
   }

@@ -1,10 +1,12 @@
 import {
   asPlan,
+  type DisplayProbeState,
   McpAppsBridge,
   type TodojoBridge,
   type TodojoPlan,
   type TodojoTask,
 } from "./bridge.js";
+import { renderProbeControls } from "./display-probe-ui.js";
 import {
   lastCompletedTask,
   orderedTasks,
@@ -40,6 +42,11 @@ export class TodojoWidget {
   private connectTimer: number | undefined;
   private tickTimer: number | undefined;
   private unlisten: (() => void) | undefined;
+  private unlistenProbe: (() => void) | undefined;
+  private unlistenHostContext: (() => void) | undefined;
+  private hasProbed = false;
+  private probeClaimUnavailable = false;
+  private probeState: DisplayProbeState | undefined;
   private destroyed = false;
   private connecting = false;
   private anchorPerfMs = 0;
@@ -57,6 +64,23 @@ export class TodojoWidget {
         asPlan((result as { structuredContent?: unknown })?.structuredContent),
       ),
     );
+    if (this.bridge.onDisplayProbeState) {
+      this.unlistenProbe = this.bridge.onDisplayProbeState((state) => {
+        this.probeState = state;
+        this.render();
+      });
+    }
+    if (this.bridge.onHostContextChange) {
+      this.unlistenHostContext = this.bridge.onHostContextChange(() => {
+        if (this.bridge.getDisplayMode) {
+          const mode = this.bridge.getDisplayMode();
+          if (this.probeState && mode) {
+            this.probeState = { ...this.probeState, currentMode: mode };
+          }
+        }
+        this.render();
+      });
+    }
     window.addEventListener("online", this.wake);
     document.addEventListener("visibilitychange", this.wake);
     this.tickTimer = window.setInterval(() => this.renderTimers(), 250);
@@ -70,6 +94,8 @@ export class TodojoWidget {
     if (this.connectTimer) window.clearTimeout(this.connectTimer);
     if (this.tickTimer) window.clearInterval(this.tickTimer);
     this.unlisten?.();
+    this.unlistenProbe?.();
+    this.unlistenHostContext?.();
     window.removeEventListener("online", this.wake);
     document.removeEventListener("visibilitychange", this.wake);
   }
@@ -87,6 +113,21 @@ export class TodojoWidget {
     try {
       await this.bridge.connect();
       this.connectRetryMs = activePollMs;
+      if (!this.hasProbed && this.bridge.probeDisplayMode) {
+        this.hasProbed = true;
+        if (!this.bridge.claimDisplayProbe) {
+          void this.bridge.probeDisplayMode();
+        } else {
+          try {
+            if (await this.bridge.claimDisplayProbe()) {
+              void this.bridge.probeDisplayMode();
+            }
+          } catch {
+            this.probeClaimUnavailable = true;
+            this.render();
+          }
+        }
+      }
     } catch {
       failed = true;
       if (!this.destroyed && !this.planId) {
@@ -310,6 +351,14 @@ export class TodojoWidget {
 
   private render(): void {
     const plan = this.plan;
+    const probe = renderProbeControls(
+      !!this.bridge.probeDisplayMode,
+      this.probeState,
+    );
+    if (this.probeClaimUnavailable) {
+      probe.status =
+        '<div class="todojo__probe-status" data-probe-status="failure" aria-live="polite">Automatic PiP diagnostic claim unavailable; use Try PiP to retry.</div>';
+    }
     const status =
       this.phase === "ready"
         ? ""
@@ -323,7 +372,42 @@ export class TodojoWidget {
       : this.mode === "full"
         ? this.fullGrid(plan)
         : this.compactGrid(plan);
-    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span><button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header><div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${content}${this.drawerHtml(plan)}</section>`;
+    this.root.innerHTML = `<section class="todojo" aria-label="ToDoJo live task plan"><header class="todojo__header"><span class="todojo__brand">LIVE TASKS</span>${plan?.title ? `<span class="todojo__title">${escapeHtml(plan.title)}</span>` : ""}<span class="todojo__stat" data-work-timer>WORK ${duration(this.currentWorkMs())}</span>${probe.button}<button class="todojo__mode" data-mode>${this.mode === "full" ? "Compact" : "Full"}</button></header>${probe.status}<div class="todojo__status" data-state="${this.phase}" aria-live="polite">${status}</div>${content}${this.drawerHtml(plan)}</section>`;
+    this.root
+      .querySelector("[data-probe-action='try-pip']")
+      ?.addEventListener("click", () => {
+        if (this.bridge.probeDisplayMode) {
+          this.probeClaimUnavailable = false;
+          this.render();
+          void this.bridge.probeDisplayMode();
+        }
+      });
+    this.root
+      .querySelector("[data-probe-action='return-inline']")
+      ?.addEventListener("click", async () => {
+        if (this.bridge.requestDisplayMode) {
+          try {
+            await this.bridge.requestDisplayMode("inline");
+            if (this.probeState) {
+              this.probeState = { ...this.probeState, currentMode: "inline" };
+            }
+          } catch {
+            const prior = this.probeState;
+            this.probeState = {
+              status: "failure",
+              result: {
+                timestamp: new Date().toISOString(),
+                advertised: prior?.result?.advertised ?? ["inline"],
+                actual: null,
+                outcome: "error",
+              },
+              currentMode: prior?.currentMode ?? "pip",
+              telemetryFailed: prior?.telemetryFailed,
+            };
+          }
+          this.render();
+        }
+      });
     this.root.querySelector("[data-mode]")?.addEventListener("click", () => {
       this.mode = this.mode === "full" ? "compact" : "full";
       this.drawer = undefined;

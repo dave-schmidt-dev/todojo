@@ -3,6 +3,7 @@ import {
   registerAppResource,
 } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/server";
+import { registerDisplayProbeTool } from "./display-probe.js";
 
 export const TODOJO_RESOURCE_URI = "ui://todojo/v0.2/todojo.html";
 
@@ -12,6 +13,7 @@ const todojoBundle =
 const todojoHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ToDoJo</title></head><body><main id="todojo"></main><script>${todojoBundle}</script></body></html>`;
 
 export function registerTodojoResource(server: McpServer): void {
+  registerDisplayProbeTool(server);
   registerAppResource(
     server,
     "ToDoJo",
@@ -28,7 +30,7 @@ export function registerTodojoResource(server: McpServer): void {
           text: todojoHtml,
           _meta: {
             ui: { prefersBorder: true },
-            "openai/ui": { availableDisplayModes: ["inline"] },
+            "openai/ui": { availableDisplayModes: ["inline", "pip"] },
           },
         },
       ],

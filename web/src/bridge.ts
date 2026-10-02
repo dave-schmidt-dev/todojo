@@ -3,7 +3,18 @@ import {
   type McpUiToolResultNotification,
 } from "@modelcontextprotocol/ext-apps";
 
+import {
+  type DisplayMode,
+  type DisplayProbeResult,
+  type DisplayProbeState,
+  executeDisplayProbe,
+  normalizeDisplayMode,
+  recordProbeTelemetry,
+} from "./display-probe.js";
+
 type TaskStatus = "queued" | "active" | "blocked" | "completed" | "skipped";
+
+export type { DisplayMode, DisplayProbeResult, DisplayProbeState };
 
 export interface TodojoTask {
   id: string;
@@ -29,11 +40,21 @@ export interface TodojoPlan {
 }
 
 export type ToolResultListener = (result: unknown) => void;
+export type DisplayProbeListener = (state: DisplayProbeState) => void;
 
 export interface TodojoBridge {
   connect(): Promise<void>;
   getPlan(planId: string): Promise<TodojoPlan>;
   onToolResult(listener: ToolResultListener): () => void;
+  probeDisplayMode?(): Promise<DisplayProbeResult>;
+  claimDisplayProbe?(): Promise<boolean>;
+  onDisplayProbeState?(listener: DisplayProbeListener): () => void;
+  getDisplayProbeState?(): DisplayProbeState | undefined;
+  requestDisplayMode?(
+    mode: DisplayMode | { mode: DisplayMode },
+  ): Promise<{ mode: string }>;
+  onHostContextChange?(listener: () => void): () => void;
+  getDisplayMode?(): DisplayMode;
 }
 
 const taskStatuses = new Set<TaskStatus>([
@@ -104,9 +125,16 @@ function planFromResult(result: unknown): TodojoPlan | undefined {
 export class McpAppsBridge implements TodojoBridge {
   private readonly app = new App(
     { name: "ToDoJo", version: "0.2.1" },
-    { availableDisplayModes: ["inline"] },
+    { availableDisplayModes: ["inline", "pip"] },
   );
   private readonly listeners = new Set<ToolResultListener>();
+  private probeState: DisplayProbeState = {
+    status: "idle",
+    currentMode: "inline",
+  };
+  private readonly probeListeners = new Set<DisplayProbeListener>();
+  private readonly hostContextListeners = new Set<() => void>();
+  private hostContextSubscribed = false;
 
   constructor() {
     this.app.addEventListener(
@@ -115,6 +143,23 @@ export class McpAppsBridge implements TodojoBridge {
         for (const listener of this.listeners) listener(result);
       },
     );
+  }
+
+  private ensureHostContextListener(): void {
+    if (this.hostContextSubscribed) return;
+    this.hostContextSubscribed = true;
+    this.app.addEventListener("hostcontextchanged", (params) => {
+      const mode = normalizeDisplayMode(params?.displayMode);
+      if (mode) {
+        this.probeState = { ...this.probeState, currentMode: mode };
+        this.notifyProbeListeners();
+      }
+      for (const listener of this.hostContextListeners) listener();
+    });
+  }
+
+  private notifyProbeListeners(): void {
+    for (const listener of this.probeListeners) listener(this.probeState);
   }
 
   async connect(): Promise<void> {
@@ -134,5 +179,97 @@ export class McpAppsBridge implements TodojoBridge {
   onToolResult(listener: ToolResultListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  async claimDisplayProbe(): Promise<boolean> {
+    const response = await this.app.callServerTool({
+      name: "claim_display_probe",
+      arguments: {},
+    });
+    if (
+      typeof response === "object" &&
+      response !== null &&
+      "isError" in response &&
+      response.isError === true
+    ) {
+      throw new Error("Display probe claim failed");
+    }
+    const structured = (response as { structuredContent?: unknown } | undefined)
+      ?.structuredContent;
+    if (
+      typeof structured !== "object" ||
+      structured === null ||
+      !("claimed" in structured) ||
+      typeof structured.claimed !== "boolean"
+    ) {
+      throw new Error("Display probe claim returned no result");
+    }
+    return structured.claimed;
+  }
+
+  async probeDisplayMode(): Promise<DisplayProbeResult> {
+    this.ensureHostContextListener();
+    this.probeState = { ...this.probeState, status: "pending" };
+    this.notifyProbeListeners();
+
+    const result = await executeDisplayProbe(this.app);
+    const hostMode = normalizeDisplayMode(
+      this.app.getHostContext()?.displayMode,
+    );
+    const newMode = result.actual ?? hostMode ?? this.probeState.currentMode;
+
+    this.probeState = {
+      status:
+        result.outcome === "success" || result.outcome === "rejected"
+          ? "returned"
+          : "failure",
+      result,
+      currentMode: newMode,
+    };
+    this.notifyProbeListeners();
+
+    const telemetryOk = await recordProbeTelemetry(this.app, result);
+    this.probeState = { ...this.probeState, telemetryFailed: !telemetryOk };
+    this.notifyProbeListeners();
+    return result;
+  }
+
+  async requestDisplayMode(
+    modeOrParams: DisplayMode | { mode: DisplayMode },
+  ): Promise<{ mode: string }> {
+    this.ensureHostContextListener();
+    const mode =
+      typeof modeOrParams === "string" ? modeOrParams : modeOrParams.mode;
+    const response = await this.app.requestDisplayMode({ mode });
+    const actual = normalizeDisplayMode(response?.mode);
+    if (actual) {
+      this.probeState = { ...this.probeState, currentMode: actual };
+      this.notifyProbeListeners();
+    }
+    return response;
+  }
+
+  onDisplayProbeState(listener: DisplayProbeListener): () => void {
+    this.ensureHostContextListener();
+    this.probeListeners.add(listener);
+    listener(this.probeState);
+    return () => this.probeListeners.delete(listener);
+  }
+
+  getDisplayProbeState(): DisplayProbeState {
+    return this.probeState;
+  }
+
+  getDisplayMode(): DisplayMode {
+    const hostMode = normalizeDisplayMode(
+      this.app.getHostContext()?.displayMode,
+    );
+    return hostMode ?? this.probeState.currentMode;
+  }
+
+  onHostContextChange(listener: () => void): () => void {
+    this.ensureHostContextListener();
+    this.hostContextListeners.add(listener);
+    return () => this.hostContextListeners.delete(listener);
   }
 }
